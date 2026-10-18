@@ -2094,8 +2094,8 @@ class MainWindow(QMainWindow):
                         self,
                         APP_NAME,
                         "Could not read the update channel. Check your connection - if you "
-                        "are online, the GitHub repository may be private or not yet "
-                        "published.",
+                        "are online, the update site may be unreachable or no release "
+                        "has been published yet.",
                     )
 
         def _failed(message):

@@ -268,7 +268,7 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(8)
 
-        self.auto_update_check = QCheckBox("Check for updates on startup (GitHub, optional)")
+        self.auto_update_check = QCheckBox("Check for updates on startup (optional, uses the internet)")
         self.auto_update_check.setChecked(bool(settings.get("auto_update_check", True)))
         self.auto_update_download = QCheckBox(
             "Download updates automatically when one is found"
@@ -297,7 +297,7 @@ class SettingsDialog(QDialog):
         outer.addWidget(self.upd_status)
 
         note = QLabel(
-            "The update check reads the public GitHub repository only - your documents "
+            "The update check only reads the project's public update file - your documents "
             "are never uploaded, and the check fails silently when offline."
         )
         note.setObjectName("Muted")
@@ -324,7 +324,7 @@ class SettingsDialog(QDialog):
         what = QLabel(
             "What leaves this machine: your search phrases (your configured web "
             "APIs), academic queries (OpenAlex / Crossref), reference texts when "
-            "you validate them, and an optional GitHub version check. Documents, "
+            "you validate them, and an optional update version check. Documents, "
             "passages, vault contents and scores are never uploaded."
         )
         what.setObjectName("Muted")
@@ -566,7 +566,7 @@ class SettingsDialog(QDialog):
         if self._upd_worker is not None and self._upd_worker.isRunning():
             return
         self.upd_btn.setEnabled(False)
-        self.upd_status.setText("Checking GitHub...")
+        self.upd_status.setText("Checking for updates...")
 
         def job(progress=None, cancel=None):
             return updater.check_for_update()
@@ -577,8 +577,8 @@ class SettingsDialog(QDialog):
             self.upd_btn.setEnabled(True)
             if not info.get("latest"):
                 self.upd_status.setText(
-                    "Could not read the update channel (offline, or the GitHub repository "
-                    "is private / has no releases yet)."
+                    "Could not read the update channel (offline, or no release has been "
+                    "published yet)."
                 )
             elif info.get("update_available"):
                 self.upd_status.setText(
