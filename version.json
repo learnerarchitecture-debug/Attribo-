@@ -1,5 +1,5 @@
 {
   "version": "2.0.0",
-  "notes": "v2.0 - strict scanning profiles, colourful match highlighting for dark mode, Fix & Cite worklist (.docx) for read-and-replace editing, attribution frames, GitHub update check. Author: Ayush Gupta.",
+  "notes": "v2.0 (full suite) - strict scanning profiles, colour highlighting, Fix & Cite worklist + verified-quote compliant rewrites, corpus vault (self-plagiarism), thesis mode, prior-work positioning, citation cross-check / quote audit / support check, revision diff report, supervisor packet, tamper-evident certificates, redacted report, explained AI signals, CLI, Explorer integration, portable mode, privacy dashboard, light theme. Author: Ayush Gupta.",
   "download_url": "https://github.com/learnerarchitecture-debug/Attribo-/releases/latest"
 }
