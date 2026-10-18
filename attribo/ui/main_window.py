@@ -1384,7 +1384,9 @@ class MainWindow(QMainWindow):
                     QMessageBox.warning(
                         self,
                         APP_NAME,
-                        "Could not reach GitHub - check your connection and try again.",
+                        "Could not read the update channel. Check your connection - if you "
+                        "are online, the GitHub repository may be private or not yet "
+                        "published.",
                     )
 
         def _failed(message):

@@ -371,7 +371,10 @@ class SettingsDialog(QDialog):
         def _done(info):
             self.upd_btn.setEnabled(True)
             if not info.get("latest"):
-                self.upd_status.setText("Could not reach GitHub (offline?). Try again later.")
+                self.upd_status.setText(
+                    "Could not read the update channel (offline, or the GitHub repository "
+                    "is private / has no releases yet)."
+                )
             elif info.get("update_available"):
                 self.upd_status.setText(
                     f"Update available: v{info['latest']} (you have v{info['current']}). "
