@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🛡️ Attribo
+<img src="docs/assets/logo.png" width="112" alt="Attribo logo">
+
+# Attribo
 
 **Local-first plagiarism & AI-likelihood screening for theses — with a workflow that helps you fix what it finds.**
 

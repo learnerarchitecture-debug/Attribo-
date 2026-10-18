@@ -7,7 +7,7 @@ from html import escape as html_escape
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -48,6 +48,7 @@ from ..report import diff_report, findings, highlight, packet, pdf_builder, reda
 from ..storage import db
 from ..storage.settings import APP_DIR, save_settings
 from ..theme import ACCENT, MATCH_COLORS, MATCH_LABELS, SUCCESS, WARN, match_colors, stylesheet
+from .branding import app_icon, logo_pixmap
 
 WATCH_OUT_DIR = APP_DIR / "Watched Reports"
 
@@ -104,6 +105,9 @@ class MainWindow(QMainWindow):
         header.setFixedHeight(64)
         hl = QHBoxLayout(header)
         hl.setContentsMargins(20, 0, 20, 0)
+        logo = QLabel()
+        logo.setPixmap(logo_pixmap(36, dpr=2.0))
+        logo.setFixedSize(36, 36)
         brand = QLabel("Attribo")
         brand.setObjectName("BrandText2")
         version = QLabel(f"v{__version__} \u00b7 local-first screening")
@@ -116,6 +120,8 @@ class MainWindow(QMainWindow):
         self.update_btn.setObjectName("UpdateBanner")
         self.update_btn.setVisible(False)
         self.update_btn.clicked.connect(self._show_update_dialog)
+        hl.addWidget(logo)
+        hl.addSpacing(10)
         hl.addWidget(brand)
         hl.addSpacing(12)
         hl.addWidget(version)
@@ -960,21 +966,7 @@ class MainWindow(QMainWindow):
             self.tray.show()
 
     def _tray_icon(self) -> QIcon:
-        pix = QPixmap(64, 64)
-        pix.fill(Qt.transparent)
-        painter = QPainter(pix)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(QColor(ACCENT))
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(2, 2, 60, 60, 16, 16)
-        painter.setPen(QColor("#FFFFFF"))
-        font = painter.font()
-        font.setPointSize(30)
-        font.setBold(True)
-        painter.setFont(font)
-        painter.drawText(pix.rect(), Qt.AlignCenter, "A")
-        painter.end()
-        return QIcon(pix)
+        return app_icon()
 
     def _choose_watch_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Choose folder to watch")

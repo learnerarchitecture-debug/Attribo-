@@ -16,6 +16,7 @@ from . import APP_NAME, VENDOR
 from .storage import db
 from .storage.settings import load_settings
 from .theme import stylesheet
+from .ui.branding import app_icon
 from .ui.main_window import MainWindow
 
 SUPPORTED_EXTS = {".docx", ".pdf", ".txt", ".md", ".rtf", ".odt"}
@@ -48,6 +49,7 @@ def main() -> int:
     settings = load_settings()
     app.setStyleSheet(stylesheet(str(settings.get("theme", "dark"))))
     app.setFont(QFont("Segoe UI", 10))
+    app.setWindowIcon(app_icon())
 
     window = MainWindow(settings)
     window.show()
