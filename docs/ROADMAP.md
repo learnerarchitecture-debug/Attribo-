@@ -142,12 +142,98 @@ simplifications noted inline. Detector evasion remains a non-goal (see bottom of
 
 - Department dashboard (batch scans, cohort reports)
 - Verification page for certificate IDs (hosted, optional — offline tamper-evidence ships in v2.0)
-- Moodle/Word add-in
+- Moodle add-in (the Word / LibreOffice sidebar moved to v3.0)
 - Self-hosted mode for universities (data sovereignty pitch)
+
+## v3.0 — Automation & the integrity copilot (planned)
+
+Turn Attribo from a scanner you open into an **automation loop that runs by itself** — and add
+the intelligence cloud checkers can't offer, because they only ever see one upload and never
+your history. Ideas below are planned, in rough priority order; the promises (local-first,
+honest signals, no evasion) carry over unchanged.
+
+### 🔁 Document CI — scans that run themselves
+
+- **Auto-rescan on save** — every save of a watched draft re-scans it quietly; Attribo only
+  interrupts when something got *worse* (similarity up / new flags) via a tray notification.
+  *Cloud tools can't do this: their model is upload → wait → download.*
+- **Regression gate for scripting / CI** — `attribo scan --fail-over 15 --json`: exit codes so
+  a scheduler, git hook or build pipeline can fail on a regression. *No checker offers
+  CI-grade document gating.*
+- **Scheduled thesis watch** — weekly unattended scans with a digest: what changed, what
+  regressed, what is new.
+- **Multi-draft lifecycle tracking** — every scan is a snapshot; each flag gets a lifecycle
+  (new → persisting → fixed → regressed) drawn as a timeline. *The history is yours and stays
+  local — the opposite of an opaque cloud database.*
+
+### 🕰️ Authorship timeline (evidence vault)
+
+- Snapshots are hashed + signed locally (v2.0 signatures already exist), then optionally
+  **anchored with OpenTimestamps** — a free, trustless proof-of-existence on the Bitcoin
+  blockchain (only a hash leaves the machine).
+- **Authorship evidence pack** export: snapshot chain + timestamps + signatures proving when
+  each part of your work existed. *New in this space — provenance for your own writing.*
+- Anchors verify with public OTS tools, even without Attribo installed.
+
+### 📦 One-click submission pack
+
+- A single ZIP for submission day: integrity statement + certificate PDF + redacted report +
+  supervisor packet + compliant-rewrite copy + coverage report.
+- **Integrity statement generator** — ready appendix text ("This thesis was screened with
+  Attribo v… on …, report ID …; the certificate is attached"). *Checkers give you a
+  percentage; none generate the disclosure paperwork for you.*
+
+### 🎓 Viva / defence preparation
+
+- For each flag: **the question a committee member might ask**, the source context, and
+  bullet-point answers built from your own surrounding text.
+- "Weakest links" drill — the five findings most likely to be challenged, each with a fix or a
+  justification. *Nothing in the checker market prepares you to defend the work.*
+
+### 🗺️ Claim–coverage map 2.0
+
+- Whole-document **support graph** — which paragraphs are backed by which cited works
+  (extends v2.0's citation support check from cited sentences to every claim).
+- Coverage heatmap: supported / weak / unsupported / uncited — printable for supervisor
+  meetings.
+- **Reference gap analysis** — the citation network around your bibliography (OpenAlex) flags
+  seminal works you cite around but never cite directly.
+
+### 🧾 Coverage transparency report
+
+- Per scan: what was actually compared (providers, queries, fetched sources), what could not
+  be checked (paywalled / offline / not found), and a coverage estimate.
+- An inspectable alternative to "98% similar" black boxes — you can audit every number.
+
+### ✍️ Assisted-writing log (disclosure, never evasion)
+
+- Optional ledger of passages revised with Fix & Cite (quote / cite / paraphrase) and when.
+- Exportable if an institution asks how this tool was used — **voluntary disclosure**.
+- Detector-evasion stays an explicit non-goal forever (see bottom of this file).
+
+### 🔌 Integrations
+
+- **Word / LibreOffice sidebar** — scan the open document from a pane (local HTTP on
+  127.0.0.1; still fully offline), push fixes back as comments.
+- Supervisor digests by email / network folder (optional, self-hosted).
+- CLI grows subcommands: `attribo vault`, `attribo diff`, `attribo packet`, `attribo verify`.
+
+### 🧠 Honest-AI upgrades
+
+- Bundled small classifier next to stylometry — ensemble with agreement display (same UX
+  philosophy as v2.0's sub-signals); runs offline on CPU.
+- Per-sentence "why" panels for every signal, not only the top four.
+- Cross-lingual plagiarism (multilingual embeddings) — carried over from v1.5.
+
+### 🛡️ Platform polish
+
+- Code-signed installer (removes the SmartScreen warning) once a certificate is affordable.
+- Privacy/consent recap before first network use; per-feature kill-switches already exist.
+- Mac / Linux builds (PySide6 is cross-platform; packaging differs).
 
 ## Idea bank (uncommitted)
 
-- Integrity statement generator (appendix text with certificate ID)
+- ~~Integrity statement generator~~ — promoted to v3.0 (submission pack)
 - Premium scan toggle via licensed commercial API (user's own key)
 - Auto-update check (signed manifest)
 - Mac/Linux builds (PySide6 is cross-platform; packaging differs)
