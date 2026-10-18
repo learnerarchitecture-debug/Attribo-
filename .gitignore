@@ -1,0 +1,15 @@
+# Attribo — (c) 2026 Attribo
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+build/
+dist/
+*.spec
+tests/_out/
+*.log
+*.db
+*.spec
+.idea/
+.vscode/
