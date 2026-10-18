@@ -1,9 +1,13 @@
 """
 Attribo — local-first plagiarism & AI-likelihood screening.
-(c) 2026 Attribo. All rights reserved.
+Author: Ayush Gupta.
+(c) 2026 Ayush Gupta (Attribo). All rights reserved.
 """
 
-__version__ = "0.11.0"
+__version__ = "2.0.0"
 APP_NAME = "Attribo"
 VENDOR = "Attribo"
-COPYRIGHT = "(c) 2026 Attribo. All rights reserved."
+AUTHOR = "Ayush Gupta"
+COPYRIGHT = "(c) 2026 Ayush Gupta (Attribo). All rights reserved."
+GITHUB_REPO = "learnerarchitecture-debug/Attribo-"
+REPO_URL = "https://github.com/learnerarchitecture-debug/Attribo-"

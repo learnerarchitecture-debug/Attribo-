@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 
 from .ai_detect import analyze_ai
 from .citation import find_citation_gaps
+from .fixcite import suggestion_for
 from .matching import (
     STOPWORDS,
     TfidfIndex,
@@ -40,6 +41,7 @@ from .parser import parse_document
 from .references import split_entries
 from .scoring import MatchItem, SourceInfo, compute_scores
 from .segmenter import classify_sections, is_quote_paragraph, split_sentences_with_spans
+from .strictness import profile as strictness_profile
 from ..engines.academic import AcademicChecker
 from ..engines.archive import ArchiveChecker
 from ..engines.web_engine import WebChecker
@@ -76,31 +78,18 @@ class ScanResult:
     citation_gaps: list = field(default_factory=list)
     ref_entries: list = field(default_factory=list)
     semantic_used: bool = False
+    strictness: str = "balanced"
 
 
 def _suggestion(match_type: str) -> str:
-    if match_type == "verbatim":
-        return (
-            "Found verbatim in a source. Fix: put the passage in quotation marks with a "
-            "full citation, or rewrite it entirely in your own words and cite the idea."
-        )
-    if match_type == "near":
-        return (
-            "Nearly verbatim (minor edits only) relative to a source. Fix: quote and cite "
-            "it, or rewrite the passage substantially in your own words with a citation."
-        )
-    if match_type == "duplicate":
-        return (
-            "This passage repeats text that already appears earlier in your own document. "
-            "Fix: delete the repetition, or merge the two passages into one."
-        )
-    return (
-        "This sentence closely mirrors a source without word-for-word copying. Fix: add "
-        "a citation after the idea, or rewrite it with attribution."
-    )
+    """Structured, attribution-first fix text (see core/fixcite.py)."""
+    return suggestion_for(match_type)
 
 
-def build_queries(content_paras: list, max_queries: int, exclude_quotes: bool) -> list:
+def build_queries(
+    content_paras: list, max_queries: int, exclude_quotes: bool, min_terms: int = 6
+) -> list:
+    low = max(6, int(min_terms) + 2)
     candidates = []
     for para in content_paras:
         if exclude_quotes and is_quote_paragraph(para):
@@ -108,7 +97,7 @@ def build_queries(content_paras: list, max_queries: int, exclude_quotes: bool) -
         for _start, _end, sent in split_sentences_with_spans(para):
             words = [t[0] for t in tokenize_spans(sent)]
             content = [w for w in words if w not in STOPWORDS]
-            if 8 <= len(content) <= 30:
+            if low <= len(content) <= 34:
                 rarity = sum(1 for w in content if len(w) >= 6)
                 candidates.append((rarity + 0.01 * len(content), sent))
     candidates.sort(key=lambda x: -x[0])
@@ -116,8 +105,8 @@ def build_queries(content_paras: list, max_queries: int, exclude_quotes: bool) -
     queries = []
     seen_prefixes = set()
     for _score, sent in candidates:
-        phrase_words = [t[0] for t in tokenize_spans(sent) if t[0] not in STOPWORDS][:12]
-        if len(phrase_words) >= 6:
+        phrase_words = [t[0] for t in tokenize_spans(sent) if t[0] not in STOPWORDS][:14]
+        if len(phrase_words) >= max(5, int(min_terms)):
             key = tuple(phrase_words[:8])
             if key in seen_prefixes:
                 continue
@@ -139,7 +128,9 @@ def run_scan(path, settings: dict, progress=None, cancel=None) -> ScanResult:
         if cancel and cancel():
             raise RuntimeError("Scan cancelled.")
 
+    prof = strictness_profile(settings)
     result = ScanResult()
+    result.strictness = prof["level"]
     f = Path(path)
     result.file_name = f.name
     result.file_path = str(f)
@@ -251,8 +242,9 @@ def run_scan(path, settings: dict, progress=None, cancel=None) -> ScanResult:
 
     # -- queries -----------------------------------------------------------
     report(14, "Building search queries...")
-    max_queries = int(settings.get("max_queries", 12))
-    queries = build_queries(content_paras, max_queries, exclude_quotes)
+    queries = build_queries(
+        content_paras, prof["max_queries"], exclude_quotes, prof["min_query_terms"]
+    )
     if not queries:
         result.warnings.append("No sentences suitable for web queries were found.")
 
@@ -270,7 +262,7 @@ def run_scan(path, settings: dict, progress=None, cancel=None) -> ScanResult:
             return True
         if not domain:
             return True
-        if domain_counts.get(domain, 0) >= MAX_PER_DOMAIN:
+        if domain_counts.get(domain, 0) >= prof["max_per_domain"]:
             return False
         domain_counts[domain] = domain_counts.get(domain, 0) + 1
         return True
@@ -281,7 +273,7 @@ def run_scan(path, settings: dict, progress=None, cancel=None) -> ScanResult:
                 check_cancel()
                 report(16 + int(42 * i / max(len(queries), 1)), f"Web search {i + 1}/{len(queries)}...")
                 hits = web.search(phrase)
-                for hit in hits[: int(settings.get("max_fetch_per_query", 4))]:
+                for hit in hits[: prof["max_fetch"]]:
                     if not hit.url or hit.url in used_urls or not allow_domain(hit.url):
                         continue
                     used_urls.add(hit.url)
@@ -301,7 +293,7 @@ def run_scan(path, settings: dict, progress=None, cancel=None) -> ScanResult:
             )
 
     if settings.get("enable_academic", True) and queries:
-        half = queries[: max(4, len(queries) // 2)]
+        half = list(queries) if prof["academic_all"] else queries[: max(4, len(queries) // 2)]
         for i, phrase in enumerate(half):
             check_cancel()
             report(58 + int(9 * i / max(len(half), 1)), f"Academic search {i + 1}/{len(half)}...")
@@ -344,7 +336,7 @@ def run_scan(path, settings: dict, progress=None, cancel=None) -> ScanResult:
         words = [t[0] for t in src_tokens]
         prepared.append((src, words, content_stems(words), src_text, content_stem_list(words), src_tokens))
 
-    min_words = int(settings.get("min_match_words", 8))
+    min_words = int(prof["min_words"])
     verb_union = set()
     near_union = set()
     para_union = set()
@@ -369,7 +361,9 @@ def run_scan(path, settings: dict, progress=None, cancel=None) -> ScanResult:
                 snippet_tokens(src_text, src_tokens, s0, s0 + length),
             )
 
-        for a0, a1, s0, matched, _mm in find_near_runs(tokens, src_words, min_words):
+        for a0, a1, s0, matched, _mm in find_near_runs(
+            tokens, src_words, min_words, budget=prof["near_budget"]
+        ):
             idxs = set(range(a0, a1))
             if idxs & verb_union or idxs & near_union:
                 continue
@@ -404,13 +398,24 @@ def run_scan(path, settings: dict, progress=None, cancel=None) -> ScanResult:
             chosen = None
             best_ratio = 0.0
             for si, entry in enumerate(prepared):
-                ratio = paraphrase_check(sent_words, entry[2])
+                ratio = paraphrase_check(
+                    sent_words,
+                    entry[2],
+                    prof["para_min_content"],
+                    prof["para_min_shared"],
+                    prof["para_min_ratio"],
+                    prof["para_min_rare"],
+                )
                 if ratio is not None and ratio > best_ratio:
                     best_ratio = ratio
                     chosen = si
             criterion = "stem-overlap"
             if chosen is None:
-                tf = tfidf.best_cosine(content_stem_list(sent_words))
+                tf = tfidf.best_cosine(
+                    content_stem_list(sent_words),
+                    min_cosine=prof["tfidf_min_cosine"],
+                    min_shared=prof["tfidf_min_shared"],
+                )
                 if tf is not None:
                     chosen = tf[1]
                     criterion = f"tfidf {tf[0]:.2f}"
@@ -472,7 +477,7 @@ def run_scan(path, settings: dict, progress=None, cancel=None) -> ScanResult:
                     src_emb = embed([s[1] for s in src_items])
                     check_cancel()
                     sims = doc_emb @ src_emb.T
-                    threshold = float(settings.get("semantic_threshold", 0.70))
+                    threshold = float(prof["semantic_threshold"])
                     for di, (idxs, _sent) in enumerate(doc_items):
                         row = sims[di]
                         sj = int(np.argmax(row))

@@ -295,6 +295,50 @@ def main() -> int:
     assert verify_key("AI-BOGUS-2030-01-01-DEADBEEF00") is None
     print("[ok] licensing")
 
+    # -- v2.0: strictness profiles -----------------------------------------
+    from attribo.core.strictness import profile as strictness_profile
+
+    balanced = strictness_profile({"strictness": "balanced"})
+    maximum = strictness_profile({"strictness": "maximum"})
+    assert maximum["min_words"] < balanced["min_words"], "strictness did not tighten"
+    assert maximum["semantic_threshold"] < balanced["semantic_threshold"]
+    assert maximum["max_queries"] > balanced["max_queries"]
+    assert archive_result.strictness == "strict", "default strictness is not strict"
+    print("[ok] strictness profiles (default: strict)")
+
+    # -- v2.0: Fix & Cite helpers ------------------------------------------
+    from attribo.core import fixcite
+
+    sample = next(m for m in archive_result.matches if m.match_type in ("verbatim", "near"))
+    assert "quote" in fixcite.suggestion_for("verbatim").lower()
+    frames = fixcite.attribution_frames(sample.text, sample.source_title, sample.source_url)
+    assert len(frames) == 3, "attribution frames missing"
+    assert fixcite.replacement_for(sample), "replacement text missing"
+    block = fixcite.copy_block(sample)
+    assert "Suggested replacement:" in block and "AUTHOR, YEAR" in block
+    from attribo.theme import MATCH_COLORS
+
+    assert set(MATCH_COLORS) == {"verbatim", "near", "semantic", "paraphrase", "duplicate"}
+    print("[ok] Fix & Cite helpers + colour palette")
+
+    # -- v2.0: update checker (pure logic, offline) -------------------------
+    from attribo.core.updater import is_newer
+
+    assert is_newer("2.0.1", "2.0.0")
+    assert is_newer("v2.1.0", "2.0.9")
+    assert not is_newer("2.0.0", "2.0.0")
+    assert not is_newer("1.9.9", "2.0.0")
+    print("[ok] update checker version logic")
+
+    # -- v2.0: Fix & Cite worklist (.docx) ----------------------------------
+    from attribo.report.word_export import build_worklist_docx
+
+    worklist_path = tmp / "worklist.docx"
+    exported = build_worklist_docx(archive_result, str(worklist_path))
+    assert exported >= 1, "worklist exported no rows"
+    assert worklist_path.stat().st_size > 3000, "worklist docx too small"
+    print(f"[ok] Fix & Cite worklist ({exported} flags)")
+
     # -- UI (offscreen) --------------------------------------------------
     from PySide6.QtWidgets import QApplication
 

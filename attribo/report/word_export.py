@@ -18,8 +18,12 @@ from xml.sax.saxutils import escape as xml_escape
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import Pt, RGBColor
 
+from .. import APP_NAME, COPYRIGHT
+from ..core import fixcite
 from ..core.matching import TOKEN_RE
+from ..theme import MATCH_COLORS, MATCH_LABELS
 
 COMMENT_AUTHOR = "Attribo"
 COMMENT_INITIALS = "AP"
@@ -268,3 +272,142 @@ def export_docx_with_comments(result, path) -> tuple:
     doc.save(str(path))
     _inject_comments(Path(path), comments)
     return len(comments), skipped
+
+
+# ======================================================================
+# Fix & Cite worklist - numbered flags with read-and-replace rows
+# ======================================================================
+MAX_WORKLIST_ROWS = 120
+
+
+def _add_run(paragraph, text, *, bold=False, italic=False, size=None, color=None):
+    run = paragraph.add_run(str(text))
+    run.bold = bold
+    run.italic = italic
+    if size is not None:
+        run.font.size = Pt(size)
+    if color:
+        run.font.color.rgb = RGBColor.from_string(str(color).lstrip("#").upper())
+    return run
+
+
+def build_worklist_docx(result, path) -> int:
+    """
+    Writes a Fix & Cite worklist .docx:
+      - one numbered section per flag (type, tokens, source, excerpt, fix)
+      - a read-and-replace table: ORIGINAL (search text) -> REPLACEMENT (paste text)
+      - natural attribution frames to adapt
+
+    Returns the number of flags written. Raises on unusable input.
+    The original document is never modified.
+    """
+    matches = [m for m in result.matches if (getattr(m, "text", "") or "").strip()]
+    if not matches:
+        raise RuntimeError("This scan has no flags - nothing to export.")
+
+    doc = Document()
+
+    title = doc.add_paragraph()
+    _add_run(title, f"{APP_NAME} - Fix & Cite worklist", bold=True, size=18, color="#5B8CFF")
+
+    meta = doc.add_paragraph()
+    _add_run(meta, f"Document: {result.file_name}\n", bold=True)
+    _add_run(meta, f"Report ID: {result.report_id}  -  {result.timestamp}\n")
+    _add_run(
+        meta,
+        f"Similarity {result.similarity}%  -  Paraphrase risk {result.paraphrase_risk}%  -  "
+        f"AI-likelihood {result.ai_likelihood}%  -  Integrity {result.integrity}%\n",
+    )
+    _add_run(
+        meta,
+        f"Scan strictness: {getattr(result, 'strictness', 'balanced')}  -  "
+        f"{len(matches)} flag(s) in this worklist.",
+    )
+
+    how = doc.add_paragraph()
+    _add_run(how, "How to use", bold=True, size=13, color="#5B8CFF")
+    for step in (
+        "1. Work through the numbered flags below, strongest matches first.",
+        "2. For each flag use the REPLACE table: search for the text in the ORIGINAL "
+        "cell and paste the REPLACEMENT cell instead.",
+        "3. Replace the AUTHOR, YEAR placeholders with the real citation, kept in "
+        "your chosen reference style.",
+        "4. Re-run the scan after editing to confirm the flags are resolved.",
+        "This worklist never changes your original document - you stay in control.",
+    ):
+        para = doc.add_paragraph()
+        _add_run(para, step, size=10, color="#444444")
+
+    order = {"verbatim": 0, "near": 1, "semantic": 2, "paraphrase": 3, "duplicate": 4}
+    matches.sort(key=lambda m: order.get(getattr(m, "match_type", ""), 9))
+
+    count = 0
+    for index, match in enumerate(matches[:MAX_WORKLIST_ROWS], start=1):
+        mtype = getattr(match, "match_type", "")
+        color = MATCH_COLORS.get(mtype, "#5B8CFF")
+        label = MATCH_LABELS.get(mtype, mtype)
+
+        head = doc.add_paragraph()
+        _add_run(head, f"{index}. ", bold=True, size=13)
+        _add_run(head, label.upper(), bold=True, size=13, color=color)
+        _add_run(head, f"   -   {int(getattr(match, 'tokens', 0))} tokens", size=10, color="#666666")
+
+        info = doc.add_paragraph()
+        _add_run(info, "Source: ", bold=True, size=10)
+        _add_run(info, str(getattr(match, "source_title", "") or "internal comparison"), size=10)
+        if getattr(match, "source_url", ""):
+            _add_run(info, f"   ({match.source_url})", size=9, color="#2451d8")
+
+        if getattr(match, "source_snippet", ""):
+            snip = doc.add_paragraph()
+            _add_run(snip, "Source excerpt: ", bold=True, size=10)
+            _add_run(
+                snip, fixcite.clean_text(match.source_snippet)[:400], size=10,
+                italic=True, color="#555555",
+            )
+
+        sugg = doc.add_paragraph()
+        _add_run(sugg, "Suggested fix: ", bold=True, size=10, color="#0a7a4f")
+        _add_run(sugg, str(getattr(match, "suggestion", "") or fixcite.suggestion_for(mtype)), size=10)
+
+        frames = fixcite.attribution_frames(
+            getattr(match, "text", ""),
+            getattr(match, "source_title", ""),
+            getattr(match, "source_url", ""),
+        )
+        if frames:
+            fr = doc.add_paragraph()
+            _add_run(fr, "Natural attribution frames (adapt to your voice): ", bold=True, size=10)
+            _add_run(fr, " | ".join(frames[:2]), size=10, italic=True, color="#555555")
+
+        original = fixcite.clean_text(match.text)[:400]
+        replacement = fixcite.replacement_for(match)
+        table = doc.add_table(rows=2, cols=2)
+        try:
+            table.style = "Table Grid"
+        except Exception:  # noqa: BLE001 - style missing in exotic templates
+            pass
+        header_cells = table.rows[0].cells
+        _add_run(header_cells[0].paragraphs[0], "ORIGINAL (search for this)", bold=True, size=9, color="#FF5B5B")
+        _add_run(header_cells[1].paragraphs[0], "REPLACEMENT (paste this)", bold=True, size=9, color="#34D399")
+        body_cells = table.rows[1].cells
+        _add_run(body_cells[0].paragraphs[0], original, size=9)
+        _add_run(body_cells[1].paragraphs[0], replacement or "-", size=9)
+        note = doc.add_paragraph()
+        _add_run(note, fixcite.replacement_note(match), size=9, italic=True, color="#888888")
+        count += 1
+
+    if len(matches) > MAX_WORKLIST_ROWS:
+        extra = doc.add_paragraph()
+        _add_run(
+            extra,
+            f"... {len(matches) - MAX_WORKLIST_ROWS} more flag(s) not shown "
+            f"(worklist capped at {MAX_WORKLIST_ROWS} for readability).",
+            size=10, italic=True,
+        )
+
+    footer = doc.add_paragraph()
+    _add_run(footer, f"{COPYRIGHT} - Advisory worklist; verify each citation before use.", size=9, color="#888888")
+
+    doc.save(str(path))
+    return count

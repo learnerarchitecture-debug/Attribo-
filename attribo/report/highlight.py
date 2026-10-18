@@ -91,11 +91,11 @@ def build_highlight_html(result, path) -> None:
   .legend {{ margin:14px 0; }}
   .lg {{ margin-right:14px; font-size:13px; }}
   mark {{ border-radius:4px; padding:1px 2px; color:inherit; }}
-  mark.verbatim {{ background:rgba(255,91,91,.30); box-shadow:inset 0 -2px 0 #FF5B5B; }}
-  mark.near {{ background:rgba(255,159,64,.28); box-shadow:inset 0 -2px 0 #FF9F40; }}
-  mark.semantic {{ background:rgba(94,124,255,.28); box-shadow:inset 0 -2px 0 #5E7CFF; }}
-  mark.paraphrase {{ background:rgba(64,196,255,.22); box-shadow:inset 0 -2px 0 #40C4FF; }}
-  mark.duplicate {{ background:rgba(167,139,250,.28); box-shadow:inset 0 -2px 0 #A78BFA; }}
+  mark.verbatim {{ background:rgba(255,91,91,.32); box-shadow:inset 0 -2px 0 #FF5B5B; }}
+  mark.near {{ background:rgba(255,159,64,.30); box-shadow:inset 0 -2px 0 #FF9F40; }}
+  mark.semantic {{ background:rgba(77,163,255,.30); box-shadow:inset 0 -2px 0 #4DA3FF; }}
+  mark.paraphrase {{ background:rgba(250,204,21,.26); box-shadow:inset 0 -2px 0 #FACC15; }}
+  mark.duplicate {{ background:rgba(192,132,252,.30); box-shadow:inset 0 -2px 0 #C084FC; }}
   sup.ref a {{ color:#5B8CFF; text-decoration:none; font-weight:600; }}
   .note {{ background:#121722; border:1px solid #232B3A; border-radius:12px; padding:12px 16px; margin:10px 0; font-size:14px; line-height:1.5; }}
   .nhead {{ color:#8A94A6; }}
@@ -106,6 +106,12 @@ def build_highlight_html(result, path) -> None:
   @media print {{
     body {{ background:#fff; color:#111; margin:14mm; }}
     .doc, .note {{ background:#fff; border-color:#ccc; }}
+    mark {{ background:#f6f6f8; box-shadow:none; }}
+    mark.verbatim {{ border-bottom:2px solid #FF5B5B; }}
+    mark.near {{ border-bottom:2px solid #FF9F40; }}
+    mark.semantic {{ border-bottom:2px solid #4DA3FF; }}
+    mark.paraphrase {{ border-bottom:2px solid #FACC15; }}
+    mark.duplicate {{ border-bottom:2px solid #C084FC; }}
     blockquote {{ background:#f4f4f6; }}
     .fix {{ color:#0a7a4f; }}
     a {{ color:#2451d8; }}
@@ -116,7 +122,7 @@ def build_highlight_html(result, path) -> None:
 <h1>{escape(APP_NAME)} - Highlighted copy</h1>
 <div class="muted">Report {escape(result.report_id)} · {escape(result.file_name)} ·
 Similarity {result.similarity}% · Integrity {result.integrity}% ·
-{len(placed)} highlighted passage(s)</div>
+{len(placed)} highlighted passage(s) · Strictness: {escape(str(getattr(result, "strictness", "balanced")))}</div>
 <div class="legend">{legend}</div>
 <div class="doc">{''.join(chunks)}</div>
 <h2>Source notes</h2>

@@ -7,7 +7,7 @@ from html import escape as html_escape
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -40,11 +40,12 @@ from .settings_dialog import SettingsDialog
 from .worker import BatchWorker, ScanWorker
 from .. import APP_NAME, COPYRIGHT, __version__
 from ..core import batch as batch_mod
+from ..core import fixcite, updater
 from ..licensing.keycheck import verify_key
 from ..report import findings, highlight, pdf_builder, word_export
 from ..storage import db
 from ..storage.settings import APP_DIR, save_settings
-from ..theme import ACCENT, SUCCESS, WARN
+from ..theme import ACCENT, MATCH_COLORS, MATCH_LABELS, SUCCESS, WARN
 
 WATCH_OUT_DIR = APP_DIR / "Watched Reports"
 
@@ -71,6 +72,9 @@ class MainWindow(QMainWindow):
         self._watch_seen = {}
         self._watch_out = str(WATCH_OUT_DIR)
         self._batch_out = ""
+        self._update_info = None
+        self._update_worker = None
+        self._downloaded_update = ""
         self.setWindowTitle(f"{APP_NAME} \u2014 v{__version__}")
         self.resize(1360, 880)
         self.setAcceptDrops(True)
@@ -78,6 +82,7 @@ class MainWindow(QMainWindow):
         self._refresh_license_label()
         self._refresh_history()
         self._init_watch()
+        self._init_updates()
 
     # ================================================================ UI ==
     def _build_ui(self) -> None:
@@ -101,10 +106,15 @@ class MainWindow(QMainWindow):
         self.license_lbl.setObjectName("Muted")
         settings_btn = QPushButton("Settings")
         settings_btn.clicked.connect(self._open_settings)
+        self.update_btn = QPushButton("")
+        self.update_btn.setObjectName("UpdateBanner")
+        self.update_btn.setVisible(False)
+        self.update_btn.clicked.connect(self._show_update_dialog)
         hl.addWidget(brand)
         hl.addSpacing(12)
         hl.addWidget(version)
         hl.addStretch(1)
+        hl.addWidget(self.update_btn)
         hl.addWidget(self.license_lbl)
         hl.addWidget(settings_btn)
         outer.addWidget(header)
@@ -295,12 +305,13 @@ class MainWindow(QMainWindow):
     def _build_fixcite_tab(self) -> None:
         page = QWidget()
         layout = QVBoxLayout(page)
-        self.fix_table = QTableWidget(0, 3)
-        self.fix_table.setHorizontalHeaderLabels(["Source", "Passage", "Suggested action"])
+        self.fix_table = QTableWidget(0, 4)
+        self.fix_table.setHorizontalHeaderLabels(["Type", "Source", "Passage", "Suggested fix"])
         header = self.fix_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
         self.fix_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.fix_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.fix_table.setAlternatingRowColors(True)
@@ -331,6 +342,18 @@ class MainWindow(QMainWindow):
         row2.addWidget(self.btn_word)
         row2.addStretch(1)
         layout.addLayout(row2)
+
+        row3 = QHBoxLayout()
+        self.btn_worklist = QPushButton("Export Fix & Cite worklist (.docx)")
+        self.btn_worklist.setObjectName("Primary")
+        self.btn_worklist.setEnabled(False)
+        self.btn_worklist.clicked.connect(self._export_worklist)
+        self.btn_copy_fix = QPushButton("Copy fix for selected flag")
+        self.btn_copy_fix.clicked.connect(self._copy_fix)
+        row3.addWidget(self.btn_worklist)
+        row3.addWidget(self.btn_copy_fix)
+        row3.addStretch(1)
+        layout.addLayout(row3)
         self.tabs.addTab(page, "Fix && Cite")
 
     def _build_cite_tab(self) -> None:
@@ -805,6 +828,7 @@ class MainWindow(QMainWindow):
               </p>
               <p style="color:#8A94A6; margin:2px 0;">
                 {len(gaps)} citation gap(s) &middot; {len(refs)} reference(s) parsed &middot;
+                Strictness: <b>{h(getattr(r, "strictness", "balanced"))}</b> &middot;
                 Report ID: <b>{h(r.report_id)}</b> &middot;
                 SHA-256: {h(r.doc_hash[:24])}&hellip;
               </p>
@@ -822,21 +846,47 @@ class MainWindow(QMainWindow):
         self._result_matches = list(r.matches)
         self.matches_table.setRowCount(len(r.matches))
         for row, match in enumerate(r.matches):
-            cells = [
-                match.match_type,
-                str(match.tokens),
-                match.source_title[:90],
-                match.text[:220],
-            ]
+            label = MATCH_LABELS.get(match.match_type, match.match_type)
+            cells = [label, str(match.tokens), match.source_title[:90], match.text[:220]]
             for col, text in enumerate(cells):
                 self.matches_table.setItem(row, col, QTableWidgetItem(text))
+            color = QColor(MATCH_COLORS.get(match.match_type, "#8A94A6"))
+            type_item = self.matches_table.item(row, 0)
+            if type_item is not None:
+                type_item.setForeground(QBrush(color))
+                font = type_item.font()
+                font.setBold(True)
+                type_item.setFont(font)
+            for col in range(4):
+                item = self.matches_table.item(row, col)
+                if item is not None:
+                    bg = QColor(color)
+                    bg.setAlpha(36 if col == 0 else 14)
+                    item.setBackground(QBrush(bg))
 
         # fix & cite tab
         self.fix_table.setRowCount(len(r.matches))
         for row, match in enumerate(r.matches):
-            cells = [match.source_title[:80], match.text[:160], match.suggestion[:160]]
+            label = MATCH_LABELS.get(match.match_type, match.match_type)
+            cells = [label, match.source_title[:70], match.text[:150], match.suggestion[:150]]
             for col, text in enumerate(cells):
-                self.fix_table.setItem(row, col, QTableWidgetItem(text))
+                item = QTableWidgetItem(text)
+                if col == 3:
+                    item.setToolTip(match.suggestion)
+                self.fix_table.setItem(row, col, item)
+            color = QColor(MATCH_COLORS.get(match.match_type, "#8A94A6"))
+            type_item = self.fix_table.item(row, 0)
+            if type_item is not None:
+                type_item.setForeground(QBrush(color))
+                font = type_item.font()
+                font.setBold(True)
+                type_item.setFont(font)
+            for col in range(4):
+                item = self.fix_table.item(row, col)
+                if item is not None:
+                    bg = QColor(color)
+                    bg.setAlpha(36 if col == 0 else 12)
+                    item.setBackground(QBrush(bg))
 
         # cite assist tab
         self._gaps = list(gaps)
@@ -883,6 +933,7 @@ class MainWindow(QMainWindow):
         self.btn_findings.setEnabled(True)
         self.btn_highlight.setEnabled(bool(r.full_text))
         self.btn_word.setEnabled(Path(r.file_path).suffix.lower() == ".docx")
+        self.btn_worklist.setEnabled(bool(r.matches))
 
     def _show_match_detail(self) -> None:
         row = self.matches_table.currentRow()
@@ -899,15 +950,18 @@ class MainWindow(QMainWindow):
             if match.source_url
             else "<span style='color:#8A94A6;'>internal comparison</span>"
         )
+        color = MATCH_COLORS.get(match.match_type, "#8A94A6")
+        label = MATCH_LABELS.get(match.match_type, match.match_type)
         self.match_detail.setHtml(
             f"""
             <div style="color:#E8EDF4;">
-              <p><b>{h(match.match_type.upper())}</b> &middot; {match.tokens} tokens
-                 &middot; weight {match.weight}</p>
+              <p><span style="background:{color}33; color:{color}; padding:2px 10px;
+                 border-radius:10px; font-weight:700;">{h(label)}</span>
+                 &middot; {match.tokens} tokens &middot; weight {match.weight}</p>
               <table width="100%" cellspacing="8"><tr>
                 <td width="50%" valign="top">
                   <div style="color:#8A94A6;">YOUR DOCUMENT</div>
-                  <div style="background:#10161F; padding:10px; border-radius:6px;">{h(match.text)}</div>
+                  <div style="background:#10161F; border-left:3px solid {color}; padding:10px; border-radius:6px;">{h(match.text)}</div>
                 </td>
                 <td width="50%" valign="top">
                   <div style="color:#8A94A6;">SOURCE PASSAGE</div>
@@ -1180,6 +1234,46 @@ class MainWindow(QMainWindow):
         )
         self.status_lbl.setText(f"Word review copy saved: {path}")
 
+    def _copy_fix(self) -> None:
+        row = self.fix_table.currentRow()
+        if row < 0 or row >= len(self._result_matches):
+            QMessageBox.information(
+                self, APP_NAME, "Select a row in the Fix & Cite table first."
+            )
+            return
+        try:
+            text = fixcite.copy_block(self._result_matches[row])
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, APP_NAME, f"Could not build the fix text:\n{exc}")
+            return
+        QApplication.clipboard().setText(text)
+        self.status_lbl.setText("Fix copied to clipboard - paste into your draft or notes.")
+
+    def _export_worklist(self) -> None:
+        if not self.result or not self.result.matches:
+            QMessageBox.information(
+                self, APP_NAME, "Run a scan first - the worklist needs at least one flag."
+            )
+            return
+        default = str(Path.home() / f"Attribo_Worklist_{self.result.report_id}.docx")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Fix & Cite worklist", default, "Word document (*.docx)"
+        )
+        if not path:
+            return
+        try:
+            count = word_export.build_worklist_docx(self.result, path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, APP_NAME, f"Could not write worklist:\n{exc}")
+            return
+        QMessageBox.information(
+            self,
+            APP_NAME,
+            f"Fix & Cite worklist saved:\n{path}\n\n"
+            f"{count} flag(s) with read-and-replace rows.",
+        )
+        self.status_lbl.setText(f"Worklist saved: {path}")
+
     def _verify_report(self) -> None:
         if not self.result:
             return
@@ -1256,6 +1350,140 @@ class MainWindow(QMainWindow):
             self.license_lbl.setText("License expired")
         else:
             self.license_lbl.setText("Unregistered copy")
+
+    # =========================================================== updates ==
+    def _init_updates(self) -> None:
+        if not self.settings.get("auto_update_check", True):
+            return
+        QTimer.singleShot(3000, lambda: self._check_updates(auto=True))
+
+    def _check_updates(self, auto: bool = False) -> None:
+        if self._update_worker is not None and self._update_worker.isRunning():
+            return
+        self._update_worker = FuncWorker(
+            lambda progress=None, cancel=None: updater.check_for_update(), self
+        )
+
+        def _done(info):
+            self._update_info = info
+            if info.get("update_available"):
+                self._show_update_banner(info)
+                if self.settings.get("auto_update_download", False) and info.get("download_url"):
+                    self.status_lbl.setText(
+                        f"Update v{info['latest']} found - downloading in the background..."
+                    )
+                    self._download_update()
+            elif not auto:
+                if info.get("latest"):
+                    QMessageBox.information(
+                        self,
+                        APP_NAME,
+                        f"You are on the latest version (v{info.get('current', __version__)}).",
+                    )
+                else:
+                    QMessageBox.warning(
+                        self,
+                        APP_NAME,
+                        "Could not reach GitHub - check your connection and try again.",
+                    )
+
+        def _failed(message):
+            if not auto:
+                QMessageBox.warning(self, APP_NAME, f"Update check failed:\n{message}")
+
+        self._update_worker.done.connect(_done)
+        self._update_worker.failed.connect(_failed)
+        self._update_worker.start()
+
+    def _show_update_banner(self, info) -> None:
+        self.update_btn.setText(f"Update v{info['latest']} available")
+        self.update_btn.setToolTip(
+            f"Click to install v{info['latest']} (you have v{info['current']})."
+        )
+        self.update_btn.setVisible(True)
+        try:
+            if self.tray.isVisible():
+                self.tray.showMessage(
+                    APP_NAME,
+                    f"Update v{info['latest']} is available.",
+                    QSystemTrayIcon.Information,
+                    6000,
+                )
+        except Exception:
+            pass
+
+    def _show_update_dialog(self) -> None:
+        info = self._update_info or {}
+        if not info.get("latest"):
+            self._check_updates(auto=False)
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("Attribo update")
+        box.setIcon(QMessageBox.Information)
+        box.setText(f"v{info['latest']} is available (you have v{info['current']}).")
+        notes = (info.get("notes") or "").strip()
+        box.setInformativeText(notes[:1200] or "Open the releases page for details.")
+        install_btn = (
+            box.addButton("Download && install", QMessageBox.AcceptRole)
+            if info.get("download_url")
+            else None
+        )
+        open_btn = box.addButton("Open releases page", QMessageBox.ActionRole)
+        box.addButton("Later", QMessageBox.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if install_btn is not None and clicked is install_btn:
+            self._download_update()
+        elif clicked is open_btn:
+            QDesktopServices.openUrl(QUrl(info.get("html_url") or updater.RELEASES_PAGE))
+
+    def _download_update(self) -> None:
+        info = self._update_info or {}
+        url = info.get("download_url", "")
+        if not url:
+            QDesktopServices.openUrl(QUrl(info.get("html_url") or updater.RELEASES_PAGE))
+            return
+        if self.func_worker is not None and self.func_worker.isRunning():
+            return
+
+        def job(progress=None, cancel=None):
+            return updater.download_installer(
+                url, progress=lambda frac, msg: progress(int(frac * 100), msg)
+            )
+
+        self.func_worker = FuncWorker(job, self)
+
+        def _prog(pct, msg):
+            self.progress.setValue(pct)
+            self.status_lbl.setText(msg)
+
+        def _done(path):
+            self._downloaded_update = path
+            self.progress.setValue(0)
+            self.status_lbl.setText("Update downloaded.")
+            answer = QMessageBox.question(
+                self,
+                APP_NAME,
+                f"Update downloaded to:\n{path}\n\nClose {APP_NAME} and install now?",
+            )
+            if answer == QMessageBox.Yes:
+                try:
+                    updater.launch_installer(path)
+                except Exception as exc:  # noqa: BLE001
+                    QMessageBox.warning(
+                        self, APP_NAME, f"Could not start the installer:\n{exc}"
+                    )
+                    return
+                QApplication.quit()
+
+        def _failed(message):
+            self.progress.setValue(0)
+            QMessageBox.warning(self, APP_NAME, f"Update download failed:\n{message}")
+
+        self.func_worker.progress.connect(_prog)
+        self.func_worker.done.connect(_done)
+        self.func_worker.failed.connect(_failed)
+        self.func_worker.start()
 
     def _refresh_history(self) -> None:
         try:

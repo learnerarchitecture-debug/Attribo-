@@ -1,6 +1,21 @@
 # Roadmap — Attribo
 
-> © 2026 Attribo. All rights reserved.
+> © 2026 Ayush Gupta (Attribo). All rights reserved.
+
+## v2.0.0 — Shipped (2026-10-18)
+
+- **Scan strictness profiles** — Balanced / **Strict (default)** / Maximum: one dial that
+  shortens the minimum match, adds queries, widens provider fetch limits, lowers the semantic
+  threshold and raises paraphrase sensitivity (stricter checking out of the box)
+- **Colour-coded highlighting for dark mode** — verbatim red, near-match orange, semantic blue,
+  paraphrase yellow, internal duplicate violet; applied to the Matches and Fix & Cite tables,
+  the detail viewer, the highlighted copy export and its print stylesheet
+- **Fix & Cite worklist (`.docx`)** — numbered flags, each with source, excerpt, suggested fix
+  and a read-and-replace table (ORIGINAL ↔ REPLACEMENT)
+- **Natural attribution frames** — deterministic reporting templates per flag
+- **GitHub auto-update** — update detector + optional download & install (GitHub Releases
+  first, `version.json` fallback; silent when offline)
+- Author: **Ayush Gupta**
 
 ## v0.10 – v0.11 — Trust & automation update (released)
 
@@ -30,10 +45,7 @@
 
 - Draft revision tracker (scan I→III, score-over-time chart)
 - Citation auto-formatting (APA / MLA / IEEE / Harvard) — carried through into every export
-- **Fix & Cite worklist (`.docx`)**: every flag as a numbered section — flagged passage, matched
-  source, suggested fix, formatted citation — laid out to *read and replace* in your draft;
-  includes an optional find-and-replace table (original ↔ suggested text) for editors without
-  comment support
+- ~~Fix & Cite worklist (`.docx`)~~ — shipped early in v2.0.0
 - Supervisor one-pager report mode
 
 ## v1.5 — Coverage & languages

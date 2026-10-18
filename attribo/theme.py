@@ -115,4 +115,27 @@ QToolTip {{ background-color: #1A2233; color: {TEXT}; border: 1px solid {BORDER}
 QMessageBox {{ background-color: {SURFACE}; }}
 QMenu {{ background-color: {SURFACE}; border: 1px solid {BORDER}; }}
 QMenu::item:selected {{ background-color: #22304A; }}
+
+QPushButton#UpdateBanner {{
+    background-color: #1B2A4A; color: #8FB4FF;
+    border: 1px solid #2E4B85; border-radius: 10px;
+    padding: 5px 12px; font-weight: 600;
+}}
+QPushButton#UpdateBanner:hover {{ background-color: #22355C; border-color: #3D63A8; }}
 """
+
+# Colour code used everywhere a match type is shown (dark-mode friendly).
+MATCH_COLORS = {
+    "verbatim": "#FF5B5B",
+    "near": "#FF9F40",
+    "semantic": "#4DA3FF",
+    "paraphrase": "#FACC15",
+    "duplicate": "#C084FC",
+}
+MATCH_LABELS = {
+    "verbatim": "Verbatim",
+    "near": "Near-match",
+    "semantic": "Semantic",
+    "paraphrase": "Paraphrase",
+    "duplicate": "Internal dup",
+}

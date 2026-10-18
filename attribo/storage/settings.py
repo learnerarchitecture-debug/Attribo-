@@ -47,6 +47,7 @@ DEFAULTS = {
     "exa_api_key": "",
     "searxng_url": "",
     "cross_verify_providers": True,
+    "strictness": "strict",
     "min_match_words": 8,
     "max_queries": 12,
     "max_fetch_per_query": 4,
@@ -64,6 +65,8 @@ DEFAULTS = {
     "watch_folder": "",
     "fetch_timeout": 12,
     "license_key": "",
+    "auto_update_check": True,
+    "auto_update_download": False,
 }
 
 

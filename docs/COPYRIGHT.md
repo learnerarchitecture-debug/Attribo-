@@ -1,15 +1,15 @@
 # Copyright & Third-Party Licenses — Attribo
 
-> © 2026 Attribo. All rights reserved.
+> © 2026 Ayush Gupta (Attribo). All rights reserved.
 
 ## Ownership
 
 - **Project name:** Attribo
-- **Copyright holder:** Attribo
+- **Author / copyright holder:** Ayush Gupta
 - **Year of first publication:** 2026
 - All original source code, documentation, UI design, and report/certificate designs in this
-  repository are the property of Attribo and are covered by the LICENSE file at the
-  repository root (proprietary, personal use by authorized individuals).
+  repository are the property of Ayush Gupta (project "Attribo") and are covered by the LICENSE
+  file at the repository root (proprietary, personal use by authorized individuals).
 
 ## Third-party components
 
@@ -41,4 +41,4 @@ trademarks of their respective owners. This project is not affiliated with or en
 of them.
 
 ---
-*© 2026 Attribo. All rights reserved.*
+*© 2026 Ayush Gupta (Attribo). All rights reserved.*

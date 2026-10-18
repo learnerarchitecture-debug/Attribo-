@@ -3,7 +3,8 @@
 A local-first plagiarism and AI-likelihood screening tool for research papers, theses, and dissertations.
 Built for personal and small-circle use (you + your friends), designed to compete on **transparency, privacy, and report quality** — not on false promises.
 
-> **© 2026 Attribo. All rights reserved.**
+> **© 2026 Ayush Gupta (Attribo). All rights reserved.**
+> Author: **Ayush Gupta**
 
 ---
 
@@ -15,7 +16,7 @@ Built for personal and small-circle use (you + your friends), designed to compet
 | Paraphrase Risk | Heuristic detection of sentences that mirror source content without word-for-word matching — stem overlap, TF-IDF, plus an optional local semantic (embedding) layer (beta) |
 | AI-Likelihood | Stylometric heuristic signal (burstiness, lexical diversity, formulaic-phrase density, discourse markers, opener repetition) — reported as a probability, never a verdict (beta) |
 | Evidence viewer | Every flag side-by-side: your passage next to the actual source passage |
-| Fix & Cite | For every flag: the exact passage, its source, and the legitimate fix — quote it, cite it, or rewrite with attribution |
+| Fix & Cite | For every flag: the exact passage, its source, and the legitimate fix — quote it, cite it, or rewrite with attribution; export a **worklist (.docx)** with read-and-replace rows |
 | Cite Assist | Sentences that make claims without citations + one-click candidate sources (OpenAlex / Crossref) |
 | References check | Bibliography validated against Crossref/OpenAlex: existence, DOI correctness, retraction status |
 | Highlighted copy | Full document HTML with color-coded flags and numbered source footnotes (print-to-PDF ready) |
@@ -69,12 +70,13 @@ See [docs/BUILD_WINDOWS.md](docs/BUILD_WINDOWS.md) — PyInstaller (onedir) + In
 Attribo-Attribo/
 ├─ run.py                    # entry point
 ├─ requirements.txt
+├─ version.json              # update manifest read by the in-app updater
 ├─ attribo/   # application package
 │  ├─ main.py                # app bootstrap
 │  ├─ theme.py               # dark theme (QSS)
-│  ├─ core/                  # parser, normalizer, segmenter, matching, scoring, AI heuristics, semantic (optional), pipeline
+│  ├─ core/                  # parser, normalizer, segmenter, matching, scoring, AI heuristics, semantic (optional), strictness profiles, Fix & Cite text, GitHub updater, pipeline
 │  ├─ engines/               # web search + academic connectors + cache + local archive
-│  ├─ report/                # PDF report + certificate + highlight export + Word review copy
+│  ├─ report/                # PDF report + certificate + highlight export + Word review copy + Fix & Cite worklist
 │  ├─ storage/               # settings + SQLite history
 │  ├─ ui/                    # main window, drag&drop zone, gauges, worker thread
 │  └─ licensing/             # offline friend-license keys
@@ -105,4 +107,4 @@ Attribo-Attribo/
 This tool is an advisory pre-submission screening instrument. It is not a substitute for institutional systems (Turnitin/iThenticate) and its output must not be treated as proof of misconduct. Scores are signals with uncertainty; always review matched sources manually.
 
 ---
-*© 2026 Attribo. All rights reserved. See [LICENSE](LICENSE).*
+*© 2026 Ayush Gupta (Attribo). All rights reserved. See [LICENSE](LICENSE).*

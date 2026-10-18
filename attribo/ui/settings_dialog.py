@@ -6,12 +6,16 @@ additionally clamped to the available screen area.
 
 (c) 2026 Attribo. All rights reserved.
 """
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -22,7 +26,8 @@ from PySide6.QtWidgets import (
 )
 
 from .func_worker import FuncWorker
-from ..core import semantic
+from .. import __version__
+from ..core import semantic, strictness, updater
 from ..licensing.keycheck import verify_key
 
 
@@ -40,6 +45,7 @@ class SettingsDialog(QDialog):
         self._build_scanning_tab(settings)
         self._build_ai_tab(settings)
         self._build_license_tab(settings)
+        self._build_updates_tab(settings)
 
         hint = QLabel(
             "Keys are stored locally in %APPDATA%\\Attribo. "
@@ -133,6 +139,13 @@ class SettingsDialog(QDialog):
         self.min_words.setRange(5, 20)
         self.min_words.setValue(int(settings.get("min_match_words", 8)))
 
+        self.strictness = QComboBox()
+        for level in strictness.LEVELS:
+            self.strictness.addItem(strictness.LEVEL_LABELS[level], level)
+        self.strictness.setCurrentIndex(
+            max(0, self.strictness.findData(str(settings.get("strictness", "strict"))))
+        )
+
         self.max_queries = QSpinBox()
         self.max_queries.setRange(2, 50)
         self.max_queries.setValue(int(settings.get("max_queries", 12)))
@@ -146,6 +159,7 @@ class SettingsDialog(QDialog):
         self.exclude_quotes = QCheckBox("Exclude quoted blocks from scoring")
         self.exclude_quotes.setChecked(bool(settings.get("exclude_quotes", False)))
 
+        form.addRow("Scan strictness", self.strictness)
         form.addRow("Minimum match length (words)", self.min_words)
         form.addRow("Search queries per scan", self.max_queries)
         form.addRow("", self.enable_web)
@@ -153,6 +167,14 @@ class SettingsDialog(QDialog):
         form.addRow("", self.enable_ai)
         form.addRow("", self.exclude_quotes)
         outer.addLayout(form)
+        strict_note = QLabel(
+            "Strict (default) flags shorter overlaps, runs more queries, lowers the "
+            "semantic threshold and raises paraphrase sensitivity. Maximum flags even "
+            "small overlaps - expect more false positives; always review before acting."
+        )
+        strict_note.setObjectName("Muted")
+        strict_note.setWordWrap(True)
+        outer.addWidget(strict_note)
         outer.addStretch(1)
         self.tabs.addTab(page, "Scanning")
 
@@ -214,6 +236,50 @@ class SettingsDialog(QDialog):
         outer.addWidget(note)
         outer.addStretch(1)
         self.tabs.addTab(page, "License")
+
+    def _build_updates_tab(self, settings: dict) -> None:
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        form = QFormLayout()
+        form.setSpacing(8)
+
+        self.auto_update_check = QCheckBox("Check for updates on startup (GitHub, optional)")
+        self.auto_update_check.setChecked(bool(settings.get("auto_update_check", True)))
+        self.auto_update_download = QCheckBox(
+            "Download updates automatically when one is found"
+        )
+        self.auto_update_download.setChecked(bool(settings.get("auto_update_download", False)))
+        form.addRow("", self.auto_update_check)
+        form.addRow("", self.auto_update_download)
+        outer.addLayout(form)
+
+        self._upd_worker = None
+        row = QHBoxLayout()
+        self.upd_btn = QPushButton("Check for updates now")
+        self.upd_btn.clicked.connect(self._check_updates_now)
+        self.upd_open = QPushButton("Open releases page")
+        self.upd_open.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(updater.RELEASES_PAGE))
+        )
+        row.addWidget(self.upd_btn)
+        row.addWidget(self.upd_open)
+        row.addStretch(1)
+        outer.addLayout(row)
+
+        self.upd_status = QLabel(f"Current version: v{__version__}")
+        self.upd_status.setObjectName("Muted")
+        self.upd_status.setWordWrap(True)
+        outer.addWidget(self.upd_status)
+
+        note = QLabel(
+            "The update check reads the public GitHub repository only - your documents "
+            "are never uploaded, and the check fails silently when offline."
+        )
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        outer.addWidget(note)
+        outer.addStretch(1)
+        self.tabs.addTab(page, "Updates")
 
     # ------------------------------------------------------------- semantic
     def _refresh_semantic_status(self) -> None:
@@ -290,6 +356,40 @@ class SettingsDialog(QDialog):
         self._test_worker.failed.connect(_failed)
         self._test_worker.start()
 
+    # --------------------------------------------------------------- updates
+    def _check_updates_now(self) -> None:
+        if self._upd_worker is not None and self._upd_worker.isRunning():
+            return
+        self.upd_btn.setEnabled(False)
+        self.upd_status.setText("Checking GitHub...")
+
+        def job(progress=None, cancel=None):
+            return updater.check_for_update()
+
+        self._upd_worker = FuncWorker(job, self)
+
+        def _done(info):
+            self.upd_btn.setEnabled(True)
+            if not info.get("latest"):
+                self.upd_status.setText("Could not reach GitHub (offline?). Try again later.")
+            elif info.get("update_available"):
+                self.upd_status.setText(
+                    f"Update available: v{info['latest']} (you have v{info['current']}). "
+                    "Use the update banner in the main window to download and install."
+                )
+            else:
+                self.upd_status.setText(
+                    f"You are on the latest version (v{info['current']})."
+                )
+
+        def _failed(message):
+            self.upd_btn.setEnabled(True)
+            self.upd_status.setText(f"Update check failed: {message}")
+
+        self._upd_worker.done.connect(_done)
+        self._upd_worker.failed.connect(_failed)
+        self._upd_worker.start()
+
     # -------------------------------------------------------------- license
     def _check_license(self) -> None:
         key = self.license.text().strip()
@@ -326,4 +426,7 @@ class SettingsDialog(QDialog):
             "exclude_quotes": self.exclude_quotes.isChecked(),
             "enable_semantic": self.enable_semantic.isChecked(),
             "license_key": self.license.text().strip(),
+            "strictness": self.strictness.currentData() or "strict",
+            "auto_update_check": self.auto_update_check.isChecked(),
+            "auto_update_download": self.auto_update_download.isChecked(),
         }

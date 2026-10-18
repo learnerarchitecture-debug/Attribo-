@@ -1,8 +1,8 @@
 # Features — Attribo
 
-> © 2026 Attribo. All rights reserved.
+> © 2026 Ayush Gupta (Attribo). All rights reserved.
 
-Legend: ✅ implemented in v0.9–0.10 · ⌛ planned · 💡 idea bank
+Legend: ✅ implemented (through v2.0) · ⌛ planned · 💡 idea bank
 
 ## Ingest & parsing
 
@@ -32,8 +32,9 @@ Legend: ✅ implemented in v0.9–0.10 · ⌛ planned · 💡 idea bank
 | ✅ | Academic check via OpenAlex (free, no key) |
 | ✅ | Academic check via Crossref (free, no key) |
 | ✅ | Query builder: picks the most distinctive sentences, caps query count |
+| ✅ | **Scan strictness profiles**: Balanced / **Strict (default)** / Maximum — scales match length, query count, provider fetch limits, semantic threshold and paraphrase sensitivity together |
 | ✅ | Quoted search with automatic unquoted fallback (better recall) |
-| ✅ | Source diversity cap: max 2 results per domain per scan |
+| ✅ | Source diversity cap: 2–4 results per domain depending on strictness |
 | ✅ | Evidence cache in SQLite (repeat scans are faster and stay reproducible) |
 | ⌛ | CORE API connector (millions of OA full texts) |
 | ⌛ | Semantic Scholar / arXiv / PubMed connectors |
@@ -44,7 +45,7 @@ Legend: ✅ implemented in v0.9–0.10 · ⌛ planned · 💡 idea bank
 
 | Status | Feature |
 |---|---|
-| ✅ | Verbatim detection: winnowing k-gram runs (default ≥ 8 words) |
+| ✅ | Verbatim detection: winnowing k-gram runs (6–8 words minimum, by strictness) |
 | ✅ | Near-match detection: edit-tolerant alignment (a few changed words still count) |
 | ✅ | Global token-stream matching: catches matches across paragraph boundaries |
 | ✅ | Character-accurate span highlighting (token offsets preserved) |
@@ -82,6 +83,7 @@ Legend: ✅ implemented in v0.9–0.10 · ⌛ planned · 💡 idea bank
 | ✅ | Full PDF report with matched passages and links |
 | ✅ | Findings export: styled HTML list of every flag + Fix & Cite suggestion |
 | ✅ | Highlighted copy export: full document, color-coded flags + numbered source footnotes (HTML, print-to-PDF) |
+| ✅ | **Colour-coded match highlighting, dark-mode friendly**: verbatim red · near-match orange · semantic blue · paraphrase yellow · internal duplicate violet (tables, detail view, exports) |
 | ✅ | Word comment export: flags pushed into a .docx copy as inline comments |
 | ✅ | Internal duplication reported separately (not counted as external similarity) |
 | ✅ | Certificate PDF: report ID, SHA-256 hash, timestamp, score table, QR code |
@@ -97,6 +99,9 @@ Legend: ✅ implemented in v0.9–0.10 · ⌛ planned · 💡 idea bank
 | Status | Feature |
 |---|---|
 | ✅ | Per-flag suggestion: quote correctly / add citation / rewrite with attribution |
+| ✅ | **Fix & Cite worklist export (.docx)**: numbered flags with type badge, source, excerpt, suggested fix + read-and-replace table (ORIGINAL → REPLACEMENT with citation placeholder) |
+| ✅ | **Natural attribution frames** per flag: deterministic reporting templates to adapt ("According to …, …") |
+| ✅ | **Copy fix for selected flag**: fix + replacement + frames to the clipboard in one click |
 | ✅ | Ready-to-copy reference line (title + URL + accessed date) |
 | ✅ | Open-source link per flag |
 | ✅ | Citation gap finder: uncited claim sentences (Cite Assist tab) |
@@ -114,9 +119,9 @@ Legend: ✅ implemented in v0.9–0.10 · ⌛ planned · 💡 idea bank
 | ✅ | SQLite history of past scans |
 | ✅ | Offline friend-license keys (`tools/license_generator.py` GUI + CLI) |
 | ✅ | PyInstaller + Inno Setup packaging scripts → `Setup.exe` |
-| ⌛ | Auto-update check (simple version ping) |
+| ✅ | GitHub update check: startup detection, header banner, one-click download & install (Settings → Updates) |
 | ⌛ | Multi-language UI (Arabic/RTL first) |
 | 💡 | Moodle/Microsoft Word add-in for institutions |
 
 ---
-*© 2026 Attribo. All rights reserved.*
+*© 2026 Ayush Gupta (Attribo). All rights reserved.*

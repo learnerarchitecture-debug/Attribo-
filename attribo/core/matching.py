@@ -122,16 +122,22 @@ def find_verbatim_runs(p_tokens: list, s_words: list, min_words: int, k: int = 5
     return merged
 
 
-def find_near_runs(p_tokens: list, s_words: list, min_words: int, k: int = 5) -> list:
+def find_near_runs(
+    p_tokens: list, s_words: list, min_words: int, k: int = 5, budget: int = None
+) -> list:
     """
     Edit-tolerant matching: seeds on exact k-grams, extends forward and backward
     allowing a small mismatch budget (typos, inserted/deleted words).
+    `budget` overrides the default mismatch allowance (strictness profiles use
+    it to search more eagerly).
     Returns runs as (p0, p1, s0, matched_tokens, mismatches) with matched >= min_words
     and mismatches >= 1 (purely verbatim regions are handled by find_verbatim_runs).
     """
     if len(p_tokens) < min_words or len(s_words) < k:
         return []
-    budget = max(2, min_words // 4)
+    if budget is None:
+        budget = max(2, min_words // 4)
+    budget = max(1, int(budget))
     grams = defaultdict(list)
     for i in range(len(s_words) - k + 1):
         grams[tuple(s_words[i : i + k])].append(i)
@@ -182,22 +188,30 @@ def find_near_runs(p_tokens: list, s_words: list, min_words: int, k: int = 5) ->
     return runs
 
 
-def paraphrase_check(sent_words: list, source_stems: set):
+def paraphrase_check(
+    sent_words: list,
+    source_stems: set,
+    min_content: int = 8,
+    min_shared: int = 6,
+    min_ratio: float = 0.5,
+    min_rare: int = 4,
+):
     """
     Conservative paraphrase heuristic over *stemmed* content words.
+    Thresholds are parameterised so strictness profiles can dial sensitivity.
     Returns overlap ratio (float) or None if the sentence does not qualify.
     """
     content = content_stems(sent_words)
-    if len(content) < 8:
+    if len(content) < min_content:
         return None
     shared = content & source_stems
-    if len(shared) < 6:
+    if len(shared) < min_shared:
         return None
     ratio = len(shared) / len(content)
-    if ratio < 0.5:
+    if ratio < min_ratio:
         return None
     rare_shared = sum(1 for w in shared if len(w) >= 6 and w not in _COMMON_STEMS)
-    if rare_shared < 4:
+    if rare_shared < min_rare:
         return None
     return ratio
 

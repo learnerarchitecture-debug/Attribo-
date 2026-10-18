@@ -1,7 +1,40 @@
 # Changelog — Attribo
 
-> © 2026 Attribo. All rights reserved.
+> © 2026 Ayush Gupta (Attribo). All rights reserved.
 > Format: Keep a Changelog style. Versioning: semver.
+
+## [2.0.0] — 2026-10-18
+
+### Added — v2.0 "stricter checks + read-and-replace workflow"
+
+- **Scan strictness profiles** (Settings → Scanning): *Balanced* / **Strict (new default)** /
+  *Maximum*. Strict mode shortens the minimum match, adds queries, widens provider fetch
+  limits, lowers the semantic threshold and raises paraphrase sensitivity — so more is
+  caught. Maximum flags even small overlaps (more false positives by design).
+- **Fix & Cite worklist export (.docx)**: numbered flags, each with type badge, source,
+  excerpt, suggested fix and a **read-and-replace table** (ORIGINAL text → REPLACEMENT
+  text with a citation placeholder). Your original document is never modified.
+- **Natural attribution frames**: deterministic reporting templates ("According to …,
+  …", "… documents that …") suggested per flag — adapt them to your voice.
+- **Copy fix for selected flag**: one click puts the fix, replacement and frames on the
+  clipboard.
+- **Color-coded match highlighting for dark mode**: verbatim (red), near-match (orange),
+  semantic (blue), paraphrase (yellow), internal duplicate (violet) — applied to the
+  Matches and Fix & Cite tables, the detail viewer, the highlighted copy export and its
+  print stylesheet.
+- **GitHub auto-update**: startup check (optional), non-intrusive header banner, "download
+  & install" flow using the published installer, plus a manual "Check for updates now" in
+  Settings → Updates. Reads GitHub Releases first, then `version.json`; fails silently
+  offline. Documents are never uploaded.
+- Author information: **Ayush Gupta** (package metadata, installer, LICENSE, docs).
+
+### Changed
+
+- Suggestions are now structured, attribution-first texts (core/fixcite.py); strictness is
+  recorded per scan and shown in Summary, reports and the worklist.
+- Installer: `Attribo_Setup.exe` 2.0.0, publisher "Ayush Gupta", `AppCopyright` set.
+
+---
 
 ## [0.11.0] — 2026-10-18
 

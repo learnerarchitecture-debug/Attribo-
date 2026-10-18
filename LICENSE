@@ -1,17 +1,17 @@
 Attribo — License
-Copyright (c) 2026 Attribo. All rights reserved.
+Copyright (c) 2026 Ayush Gupta. All rights reserved.
 
 GRANT OF USE
 Permission is hereby granted, free of charge, to the original user and to
-individuals personally authorized by the copyright holder ("Attribo"),
-to use this software for personal, non-commercial document screening
-purposes, subject to the conditions below.
+individuals personally authorized by the copyright holder ("Ayush Gupta",
+project "Attribo"), to use this software for personal, non-commercial
+document screening purposes, subject to the conditions below.
 
 CONDITIONS
 1. No redistribution. You may not publish, sell, sublicense, upload, or
    otherwise distribute this software or any derivative of it to any third
-   party without prior written permission from Attribo.
-2. License keys issued by Attribo are personal, non-transferable, and
+   party without prior written permission from the copyright holder.
+2. License keys issued for Attribo are personal, non-transferable, and
    may be revoked.
 3. The software must not be used to facilitate academic dishonesty. Its
    remediation features are attribution-first by design; outputs are
@@ -21,12 +21,12 @@ DISCLAIMER OF WARRANTY
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-ATTRIBO BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
+THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
 FROM THE USE OF THE SOFTWARE.
 
 THIRD-PARTY COMPONENTS
 This software uses open-source libraries under their respective licenses
-(see docs/COPYRIGHT.md). Copyright (c) 2026 Attribo applies to the
+(see docs/COPYRIGHT.md). Copyright (c) 2026 Ayush Gupta applies to the
 original work in this repository only.
 
-Contact: Attribo (copyright holder)
+Contact: Ayush Gupta (copyright holder)
