@@ -3,7 +3,7 @@
 ; Build the app first:  powershell -File packaging\build.ps1
 
 #define MyAppName "Attribo"
-#define MyAppVersion "2.0.0"
+#define MyAppVersion "2.1.0"
 #define MyAppPublisher "Ayush Gupta"
 #define MyAppExeName "Attribo.exe"
 

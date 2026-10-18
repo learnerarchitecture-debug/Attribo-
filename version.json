@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
-  "notes": "v2.0 (full suite) - strict scanning profiles, colour highlighting, Fix & Cite worklist + verified-quote compliant rewrites, corpus vault (self-plagiarism), thesis mode, prior-work positioning, citation cross-check / quote audit / support check, revision diff report, supervisor packet, tamper-evident certificates, redacted report, explained AI signals, CLI, Explorer integration, portable mode, privacy dashboard, light theme. Author: Ayush Gupta.",
+  "version": "2.1.0",
+  "notes": "v2.1 - branding release: the new Attribo logo (quotation mark + verified check) is integrated across the header, window/taskbar, tray and installer; clearer update screens; refreshed README and a v3.0 automation roadmap. Author: Ayush Gupta.",
   "download_url": "https://github.com/learnerarchitecture-debug/Attribo-/releases/latest"
 }

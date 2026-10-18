@@ -6,7 +6,7 @@
 
 **Local-first plagiarism & AI-likelihood screening for theses — with a workflow that helps you fix what it finds.**
 
-[![Version](https://img.shields.io/badge/version-2.0.0-5B8CFF?style=for-the-badge)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.0-5B8CFF?style=for-the-badge)](docs/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?style=for-the-badge)](packaging/BUILD_WINDOWS.md)
 [![Privacy](https://img.shields.io/badge/privacy-offline--first-34D399?style=for-the-badge)](docs/PRIVACY.md)
 [![Python](https://img.shields.io/badge/python-3.12-FFD43B?style=for-the-badge&logo=python&logoColor=black)](requirements.txt)

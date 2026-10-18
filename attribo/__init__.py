@@ -4,7 +4,7 @@ Author: Ayush Gupta.
 (c) 2026 Ayush Gupta (Attribo). All rights reserved.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 APP_NAME = "Attribo"
 VENDOR = "Attribo"
 AUTHOR = "Ayush Gupta"

@@ -3,6 +3,27 @@
 > © 2026 Ayush Gupta (Attribo). All rights reserved.
 > Format: Keep a Changelog style. Versioning: semver.
 
+## [2.1.0] — 2026-10-18
+
+### Added — branding & the release update channel
+
+- **New Attribo logo** — a quotation mark (attribution) verified by a check badge —
+  drawn programmatically in `attribo/ui/branding.py` and integrated everywhere: app
+  header, window & taskbar icon, system tray, the built `.exe` and the installer.
+  `tools/make_logo.py` regenerates `packaging/appicon.ico` (16–256px, all sizes) and
+  `docs/assets/logo.png`.
+- **Release-based update channel** — the app now prefers the official release feed
+  (version tag + installer asset) for update detection, with `version.json` as the
+  fallback; detected updates can be downloaded and launched in-app.
+- README redesigned (badges, feature tour, workflow steps); ROADMAP extended with
+  the planned v3.0 automation suite (Document CI, authorship timeline, submission
+  pack, viva prep, coverage transparency).
+
+### Changed
+
+- Update screens use service-neutral wording ("Checking for updates…") — no
+  repository branding anywhere in the UI.
+
 ## [2.0.0] — 2026-10-18
 
 ### Added — v2.0 "stricter checks + read-and-replace workflow"
