@@ -316,6 +316,20 @@ def run_scan(path, settings: dict, progress=None, cancel=None) -> ScanResult:
     elif settings.get("enable_archive", False):
         result.warnings.append("Local archive enabled but folder is missing or empty.")
 
+    if settings.get("vault_enabled", False):
+        check_cancel()
+        report(69, "Checking corpus vault...")
+        try:
+            from .vault import vault_sources
+
+            for src in vault_sources(exclude_hash=result.doc_hash):
+                if src["url"] in used_urls:
+                    continue
+                used_urls.add(src["url"])
+                sources.append(src)
+        except Exception as exc:  # noqa: BLE001
+            result.warnings.append(f"Vault check error: {exc}")
+
     result.sources = [
         SourceInfo(
             title=src["title"], url=src["url"], kind=src["kind"], fetched=bool(src["text"])
@@ -570,6 +584,14 @@ def run_scan(path, settings: dict, progress=None, cancel=None) -> ScanResult:
 
     license_info = verify_key(str(settings.get("license_key", "")))
     result.licensed = bool(license_info and not license_info.get("expired"))
+
+    if settings.get("vault_enabled", False):
+        try:
+            from .vault import index_result
+
+            index_result(result)
+        except Exception as exc:  # noqa: BLE001
+            result.warnings.append(f"Vault indexing skipped: {exc}")
 
     report(100, "Done")
     return result

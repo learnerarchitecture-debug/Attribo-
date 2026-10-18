@@ -1,15 +1,40 @@
 """
 JSON settings storage.
 
-Location: %APPDATA%\\Attribo\\settings.json
+Location: %APPDATA%\\Attribo\\settings.json  (or <app>\\AttriboData in
+portable mode - see _portable_root below).
 (c) 2026 Attribo. All rights reserved.
 """
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 
-APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "Attribo"
+
+def _portable_root():
+    """Folder-portable mode ("USB stick"): data lives next to the app.
+
+    Enabled by an `Attribo-portable.marker` file beside the executable (or the
+    project root in development) or the ATTRIBO_PORTABLE=1 environment variable.
+    Returns the base folder, or None for normal (per-user AppData) mode.
+    """
+    if getattr(sys, "frozen", False):
+        base = Path(sys.executable).resolve().parent
+    else:
+        base = Path(__file__).resolve().parents[2]
+    if os.environ.get("ATTRIBO_PORTABLE") == "1":
+        return base
+    if (base / "Attribo-portable.marker").exists():
+        return base
+    return None
+
+
+_PORTABLE = _portable_root()
+if _PORTABLE is not None:
+    APP_DIR = _PORTABLE / "AttriboData"
+else:
+    APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "Attribo"
 SETTINGS_FILE = APP_DIR / "settings.json"
 
 _LEGACY_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "Archinsights" / "PlagCheck"
@@ -36,7 +61,8 @@ def _migrate_legacy_data() -> None:
         pass
 
 
-_migrate_legacy_data()
+if _PORTABLE is None:
+    _migrate_legacy_data()
 
 DEFAULTS = {
     "google_api_key": "",
@@ -67,6 +93,9 @@ DEFAULTS = {
     "license_key": "",
     "auto_update_check": True,
     "auto_update_download": False,
+    "vault_enabled": False,
+    "theme": "dark",
+    "batch_thesis": False,
 }
 
 

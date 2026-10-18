@@ -1,11 +1,14 @@
 """
-Settings dialog: API keys, scanning thresholds, AI/semantic options, license.
+Settings dialog: API keys, scanning thresholds, AI/semantic options, license,
+privacy (local data tools) and updates.
 
 Tabbed layout keeps the dialog compact so it fits laptop screens; the size is
 additionally clamped to the available screen area.
 
 (c) 2026 Attribo. All rights reserved.
 """
+from pathlib import Path
+
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
@@ -14,10 +17,12 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -46,6 +51,7 @@ class SettingsDialog(QDialog):
         self._build_ai_tab(settings)
         self._build_license_tab(settings)
         self._build_updates_tab(settings)
+        self._build_privacy_tab(settings)
 
         hint = QLabel(
             "Keys are stored locally in %APPDATA%\\Attribo. "
@@ -159,7 +165,15 @@ class SettingsDialog(QDialog):
         self.exclude_quotes = QCheckBox("Exclude quoted blocks from scoring")
         self.exclude_quotes.setChecked(bool(settings.get("exclude_quotes", False)))
 
+        self.theme = QComboBox()
+        self.theme.addItem("Dark (default)", "dark")
+        self.theme.addItem("Light", "light")
+        self.theme.setCurrentIndex(
+            max(0, self.theme.findData(str(settings.get("theme", "dark"))))
+        )
+
         form.addRow("Scan strictness", self.strictness)
+        form.addRow("Appearance", self.theme)
         form.addRow("Minimum match length (words)", self.min_words)
         form.addRow("Search queries per scan", self.max_queries)
         form.addRow("", self.enable_web)
@@ -193,9 +207,20 @@ class SettingsDialog(QDialog):
         self.semantic_btn.clicked.connect(self._download_semantic)
         outer.addWidget(self.semantic_btn)
 
+        srow = QHBoxLayout()
+        self.semantic_delete = QPushButton("Delete downloaded model")
+        self.semantic_delete.setToolTip(
+            "Frees ~90 MB; semantic matching falls back to stems / TF-IDF."
+        )
+        self.semantic_delete.clicked.connect(self._delete_semantic)
+        srow.addWidget(self.semantic_delete)
+        srow.addStretch(1)
+        outer.addLayout(srow)
+
         self.semantic_status = QLabel("")
         self.semantic_status.setObjectName("Muted")
         self.semantic_status.setWordWrap(True)
+        self.semantic_status.setToolTip(str(semantic.MODEL_DIR))
         self._refresh_semantic_status()
         outer.addWidget(self.semantic_status)
 
@@ -281,9 +306,189 @@ class SettingsDialog(QDialog):
         outer.addStretch(1)
         self.tabs.addTab(page, "Updates")
 
+    def _build_privacy_tab(self, settings: dict) -> None:
+        page = QWidget()
+        outer = QVBoxLayout(page)
+
+        from ..storage import settings as settings_mod
+
+        portable = getattr(settings_mod, "_PORTABLE", None) is not None
+        where = QLabel(
+            f"Data folder: {settings_mod.APP_DIR}\n"
+            f"Mode: {'portable (data lives next to the app)' if portable else 'per-user (AppData)'}"
+        )
+        where.setObjectName("Muted")
+        where.setWordWrap(True)
+        outer.addWidget(where)
+
+        what = QLabel(
+            "What leaves this machine: your search phrases (your configured web "
+            "APIs), academic queries (OpenAlex / Crossref), reference texts when "
+            "you validate them, and an optional GitHub version check. Documents, "
+            "passages, vault contents and scores are never uploaded."
+        )
+        what.setObjectName("Muted")
+        what.setWordWrap(True)
+        outer.addWidget(what)
+
+        row = QHBoxLayout()
+        open_btn = QPushButton("Open data folder")
+        open_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(
+                QUrl.fromLocalFile(str(settings_mod.APP_DIR))
+            )
+        )
+        back_btn = QPushButton("Backup data (zip)...")
+        back_btn.clicked.connect(self._backup_data)
+        rest_btn = QPushButton("Restore backup...")
+        rest_btn.clicked.connect(self._restore_data)
+        row.addWidget(open_btn)
+        row.addWidget(back_btn)
+        row.addWidget(rest_btn)
+        row.addStretch(1)
+        outer.addLayout(row)
+
+        row2 = QHBoxLayout()
+        hist_btn = QPushButton("Clear scan history")
+        hist_btn.clicked.connect(self._clear_history)
+        vault_btn = QPushButton("Clear Corpus Vault")
+        vault_btn.clicked.connect(self._clear_vault)
+        cache_btn = QPushButton("Clear evidence cache")
+        cache_btn.clicked.connect(self._clear_cache)
+        row2.addWidget(hist_btn)
+        row2.addWidget(vault_btn)
+        row2.addWidget(cache_btn)
+        row2.addStretch(1)
+        outer.addLayout(row2)
+
+        self.privacy_status = QLabel("")
+        self.privacy_status.setObjectName("Muted")
+        self.privacy_status.setWordWrap(True)
+        outer.addWidget(self.privacy_status)
+
+        tip = QLabel(
+            "Tip: for a USB-stick install, create an empty file named "
+            "Attribo-portable.marker next to Attribo.exe - settings, history and "
+            "the vault then live in an AttriboData folder beside the app."
+        )
+        tip.setObjectName("Muted")
+        tip.setWordWrap(True)
+        outer.addWidget(tip)
+        outer.addStretch(1)
+        self.tabs.addTab(page, "Privacy")
+
+    def _backup_data(self) -> None:
+        import zipfile
+
+        from ..storage import db
+        from ..storage.settings import APP_DIR, SETTINGS_FILE
+
+        default = str(Path.home() / "Attribo-backup.zip")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save data backup", default, "Zip archive (*.zip)"
+        )
+        if not path:
+            return
+        try:
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+                if SETTINGS_FILE.exists():
+                    archive.write(SETTINGS_FILE, "settings.json")
+                if db.DB_FILE.exists():
+                    archive.write(db.DB_FILE, "attribo.db")
+            self.privacy_status.setText(f"Backup written: {path}")
+        except Exception as exc:  # noqa: BLE001
+            self.privacy_status.setText(f"Backup failed: {exc}")
+
+    def _restore_data(self) -> None:
+        import zipfile
+
+        from ..storage.settings import APP_DIR
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose backup archive", "", "Zip archive (*.zip)"
+        )
+        if not path:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Restore data",
+            "Replace settings and scan history with this backup?\n"
+            "Attribo should be restarted afterwards.",
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            APP_DIR.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(path) as archive:
+                names = set(archive.namelist())
+                if "settings.json" in names:
+                    archive.extract("settings.json", APP_DIR)
+                if "attribo.db" in names:
+                    archive.extract("attribo.db", APP_DIR)
+            self.privacy_status.setText("Backup restored - restart Attribo to apply.")
+        except Exception as exc:  # noqa: BLE001
+            self.privacy_status.setText(f"Restore failed: {exc}")
+
+    def _clear_history(self) -> None:
+        from ..storage import db
+
+        answer = QMessageBox.question(
+            self, "Clear history", "Delete the entire local scan history?"
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            count = db.clear_history()
+        except Exception:  # noqa: BLE001
+            count = 0
+        self.privacy_status.setText(f"Scan history cleared ({count} row(s) removed).")
+
+    def _clear_vault(self) -> None:
+        from ..core import vault
+
+        answer = QMessageBox.question(
+            self, "Clear vault", "Remove every document from the Corpus Vault?"
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            count = vault.clear()
+        except Exception:  # noqa: BLE001
+            count = 0
+        self.privacy_status.setText(f"Corpus Vault cleared ({count} document(s) removed).")
+
+    def _clear_cache(self) -> None:
+        from ..engines import cache
+
+        try:
+            cache.prune(days=0)
+        except Exception:  # noqa: BLE001
+            pass
+        self.privacy_status.setText("Evidence cache cleared.")
+
+    def _delete_semantic(self) -> None:
+        import shutil
+
+        answer = QMessageBox.question(
+            self,
+            "Delete model",
+            "Remove the downloaded semantic model (~90 MB)?\n"
+            "Paraphrase checking falls back to stems / TF-IDF.",
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            shutil.rmtree(semantic.MODEL_DIR, ignore_errors=True)
+            self.semantic_status.setText("Model removed.")
+            self._refresh_semantic_status()
+        except Exception as exc:  # noqa: BLE001
+            self.semantic_status.setText(f"Could not remove the model: {exc}")
+
     # ------------------------------------------------------------- semantic
     def _refresh_semantic_status(self) -> None:
         self.semantic_status.setText(semantic.status_text())
+        if hasattr(self, "semantic_delete"):
+            self.semantic_delete.setEnabled(semantic.MODEL_DIR.exists())
 
     def _download_semantic(self) -> None:
         if self._sem_worker is not None and self._sem_worker.isRunning():
@@ -430,6 +635,7 @@ class SettingsDialog(QDialog):
             "enable_semantic": self.enable_semantic.isChecked(),
             "license_key": self.license.text().strip(),
             "strictness": self.strictness.currentData() or "strict",
+            "theme": self.theme.currentData() or "dark",
             "auto_update_check": self.auto_update_check.isChecked(),
             "auto_update_download": self.auto_update_download.isChecked(),
         }

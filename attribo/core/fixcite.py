@@ -122,6 +122,16 @@ def replacement_note(match) -> str:
     )
 
 
+def quote_verified(match) -> bool:
+    """True when the flagged text can be found inside the captured source
+    excerpt - quoting it word-for-word is then safe to suggest."""
+    text = clean_text(getattr(match, "text", "")).lower()
+    snippet = clean_text(getattr(match, "source_snippet", "")).lower()
+    if not text or not snippet:
+        return False
+    return text[:160] in snippet
+
+
 def copy_block(match) -> str:
     """Clipboard text for 'Copy fix for selected flag'."""
     mtype = getattr(match, "match_type", "")
@@ -140,6 +150,10 @@ def copy_block(match) -> str:
     if replacement:
         lines.append("Suggested replacement: " + replacement)
         lines.append("(" + replacement_note(match) + ")")
+    if quote_verified(match) and mtype in ("verbatim", "near"):
+        lines.append(
+            "Quote check: verified word-for-word against the captured source excerpt."
+        )
     frames = attribution_frames(
         getattr(match, "text", ""),
         getattr(match, "source_title", ""),

@@ -39,13 +39,15 @@ from .gauges import ScoreRing
 from .settings_dialog import SettingsDialog
 from .worker import BatchWorker, ScanWorker
 from .. import APP_NAME, COPYRIGHT, __version__
+from ..core import ai_detect
 from ..core import batch as batch_mod
-from ..core import fixcite, updater
+from ..core import citationgraph, fixcite, priorwork, signing, thesis, updater
+from ..core import vault as vault_mod
 from ..licensing.keycheck import verify_key
-from ..report import findings, highlight, pdf_builder, word_export
+from ..report import diff_report, findings, highlight, packet, pdf_builder, redacted, word_export
 from ..storage import db
 from ..storage.settings import APP_DIR, save_settings
-from ..theme import ACCENT, MATCH_COLORS, MATCH_LABELS, SUCCESS, WARN
+from ..theme import ACCENT, MATCH_COLORS, MATCH_LABELS, SUCCESS, WARN, match_colors, stylesheet
 
 WATCH_OUT_DIR = APP_DIR / "Watched Reports"
 
@@ -75,6 +77,10 @@ class MainWindow(QMainWindow):
         self._update_info = None
         self._update_worker = None
         self._downloaded_update = ""
+        self._theme = str(self.settings.get("theme", "dark"))
+        self._mcolors = match_colors(self._theme)
+        self._results_history: list = []
+        self._prior_works: list = []
         self.setWindowTitle(f"{APP_NAME} \u2014 v{__version__}")
         self.resize(1360, 880)
         self.setAcceptDrops(True)
@@ -215,6 +221,15 @@ class MainWindow(QMainWindow):
         brow.addStretch(1)
         ll.addLayout(brow)
 
+        self.chk_thesis = QCheckBox("Thesis mode (treat files as chapters)")
+        self.chk_thesis.setChecked(bool(self.settings.get("batch_thesis", False)))
+        self.chk_thesis.setToolTip(
+            "After a batch scan, build a thesis summary: per-chapter scores plus "
+            "cross-chapter overlap detection."
+        )
+        self.chk_thesis.toggled.connect(self._toggle_thesis)
+        ll.addWidget(self.chk_thesis)
+
         self.chk_watch = QCheckBox("Watch folder for new documents")
         self.chk_watch.setChecked(bool(self.settings.get("watch_enabled", False)))
         self.chk_watch.toggled.connect(self._toggle_watch)
@@ -252,6 +267,8 @@ class MainWindow(QMainWindow):
         self._build_refs_tab()
         self._build_cert_tab()
         self._build_history_tab()
+        self._build_vault_tab()
+        self._build_priorwork_tab()
         splitter.addWidget(self.tabs)
         splitter.setStretchFactor(1, 1)
 
@@ -275,6 +292,32 @@ class MainWindow(QMainWindow):
         self.summary_info.setOpenExternalLinks(True)
         self.summary_info.setPlaceholderText("Scan results will appear here.")
         layout.addWidget(self.summary_info, 1)
+
+        row = QHBoxLayout()
+        self.btn_packet = QPushButton("Supervisor packet (PDF)")
+        self.btn_packet.setEnabled(False)
+        self.btn_packet.setToolTip(
+            "One PDF for your supervisor: summary, evidence, revision history and "
+            "the tamper-evident signature."
+        )
+        self.btn_packet.clicked.connect(self._export_packet)
+        self.btn_redacted = QPushButton("Redacted report (HTML)")
+        self.btn_redacted.setEnabled(False)
+        self.btn_redacted.setToolTip(
+            "Findings and sources without your draft text - safe to share early."
+        )
+        self.btn_redacted.clicked.connect(self._export_redacted)
+        self.btn_explain_ai = QPushButton("Explain AI signals")
+        self.btn_explain_ai.setEnabled(False)
+        self.btn_explain_ai.setToolTip(
+            "Per-metric explanation of what raised the AI-likelihood signal."
+        )
+        self.btn_explain_ai.clicked.connect(self._explain_ai)
+        row.addWidget(self.btn_packet)
+        row.addWidget(self.btn_redacted)
+        row.addWidget(self.btn_explain_ai)
+        row.addStretch(1)
+        layout.addLayout(row)
         self.tabs.addTab(page, "Summary")
 
     def _build_matches_tab(self) -> None:
@@ -305,16 +348,20 @@ class MainWindow(QMainWindow):
     def _build_fixcite_tab(self) -> None:
         page = QWidget()
         layout = QVBoxLayout(page)
-        self.fix_table = QTableWidget(0, 4)
-        self.fix_table.setHorizontalHeaderLabels(["Type", "Source", "Passage", "Suggested fix"])
+        self.fix_table = QTableWidget(0, 5)
+        self.fix_table.setHorizontalHeaderLabels(
+            ["Done", "Type", "Source", "Passage", "Suggested fix"]
+        )
         header = self.fix_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.Stretch)
         header.setSectionResizeMode(3, QHeaderView.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.Stretch)
         self.fix_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.fix_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.fix_table.setAlternatingRowColors(True)
+        self.fix_table.itemChanged.connect(self._update_fix_progress)
         layout.addWidget(self.fix_table, 1)
 
         row = QHBoxLayout()
@@ -354,6 +401,21 @@ class MainWindow(QMainWindow):
         row3.addWidget(self.btn_copy_fix)
         row3.addStretch(1)
         layout.addLayout(row3)
+
+        row4 = QHBoxLayout()
+        self.btn_fixed_copy = QPushButton("Insert compliant rewrites into a .docx copy")
+        self.btn_fixed_copy.setEnabled(False)
+        self.btn_fixed_copy.setToolTip(
+            "Writes a copy of the scanned .docx with every flag replaced by its "
+            "compliant version (quote + citation placeholder). Your original is "
+            "never modified."
+        )
+        self.btn_fixed_copy.clicked.connect(self._export_fixed_copy)
+        self.fix_progress = QLabel("no scan yet")
+        self.fix_progress.setObjectName("Muted")
+        row4.addWidget(self.btn_fixed_copy)
+        row4.addWidget(self.fix_progress, 1)
+        layout.addLayout(row4)
         self.tabs.addTab(page, "Fix && Cite")
 
     def _build_cite_tab(self) -> None:
@@ -405,6 +467,37 @@ class MainWindow(QMainWindow):
         crow.addWidget(self.btn_cand_ref)
         crow.addStretch(1)
         layout.addLayout(crow)
+
+        arow = QHBoxLayout()
+        self.btn_cite_graph = QPushButton("Citation cross-check (offline)")
+        self.btn_cite_graph.setToolTip(
+            "Cited-but-missing / uncited / duplicate references, parsed locally."
+        )
+        self.btn_cite_graph.clicked.connect(self._run_citation_graph)
+        self.btn_quote_audit = QPushButton("Audit quoted passages (offline)")
+        self.btn_quote_audit.setToolTip(
+            "Finds quotations and whether attribution sits close by; flags "
+            "long quotes that need block formatting."
+        )
+        self.btn_quote_audit.clicked.connect(self._run_quote_audit)
+        self.btn_support = QPushButton("Check citation support (network)")
+        self.btn_support.setToolTip(
+            "Fetches each cited work's abstract (OpenAlex by DOI) and compares it "
+            "with the citing sentence - embeddings or term overlap."
+        )
+        self.btn_support.clicked.connect(self._run_support_check)
+        arow.addWidget(self.btn_cite_graph)
+        arow.addWidget(self.btn_quote_audit)
+        arow.addWidget(self.btn_support)
+        arow.addStretch(1)
+        layout.addLayout(arow)
+
+        self.cite_audit = QTextBrowser()
+        self.cite_audit.setPlaceholderText(
+            "Run the citation cross-check or the quote audit to see integrity "
+            "findings here."
+        )
+        layout.addWidget(self.cite_audit, 1)
         self.tabs.addTab(page, "Cite Assist")
 
     def _build_refs_tab(self) -> None:
@@ -483,13 +576,220 @@ class MainWindow(QMainWindow):
         refresh = QPushButton("Refresh history")
         refresh.clicked.connect(self._refresh_history)
         layout.addWidget(refresh, alignment=Qt.AlignLeft)
+
+        drow = QHBoxLayout()
+        self.btn_diff = QPushButton("Compare current scan with the previous one (diff)")
+        self.btn_diff.setToolTip(
+            "Fixed / persisting / new findings and score deltas between two scans "
+            "of the same document in this session."
+        )
+        self.btn_diff.clicked.connect(self._export_diff)
+        drow.addWidget(self.btn_diff)
+        drow.addStretch(1)
+        layout.addLayout(drow)
         self.tabs.addTab(page, "History")
+
+    def _build_vault_tab(self) -> None:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        info = QLabel(
+            "Corpus Vault: an opt-in, local index of documents YOU have scanned. "
+            "Once on, every scan is compared against your own history "
+            "(self-plagiarism / reuse) with no network access. View, remove and "
+            "wipe entries here - nothing is ever uploaded."
+        )
+        info.setObjectName("Muted")
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        self.chk_vault = QCheckBox("Index scanned documents in the Corpus Vault")
+        self.chk_vault.setChecked(bool(self.settings.get("vault_enabled", False)))
+        self.chk_vault.toggled.connect(self._toggle_vault)
+        layout.addWidget(self.chk_vault)
+        self.vault_table = QTableWidget(0, 4)
+        self.vault_table.setHorizontalHeaderLabels(
+            ["Document", "Stored", "Characters", "ID"]
+        )
+        vheader = self.vault_table.horizontalHeader()
+        vheader.setSectionResizeMode(0, QHeaderView.Stretch)
+        vheader.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        vheader.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        vheader.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.vault_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.vault_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.vault_table.setAlternatingRowColors(True)
+        layout.addWidget(self.vault_table, 1)
+        row = QHBoxLayout()
+        refresh = QPushButton("Refresh")
+        refresh.clicked.connect(self._refresh_vault)
+        remove = QPushButton("Remove selected")
+        remove.clicked.connect(self._remove_vault_selected)
+        wipe = QPushButton("Wipe vault")
+        wipe.clicked.connect(self._wipe_vault)
+        row.addWidget(refresh)
+        row.addWidget(remove)
+        row.addWidget(wipe)
+        row.addStretch(1)
+        layout.addLayout(row)
+        self.tabs.addTab(page, "Vault")
+        self._refresh_vault()
+
+    def _build_priorwork_tab(self) -> None:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        info = QLabel(
+            "Closest published works to your abstract. The most distinctive "
+            "sentences of your extracted abstract are searched on OpenAlex and "
+            "Crossref (only those search phrases leave the machine). Use the list "
+            "to position your work and to find sources to read and cite."
+        )
+        info.setObjectName("Muted")
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        self.prior_table = QTableWidget(0, 4)
+        self.prior_table.setHorizontalHeaderLabels(["Title", "Year", "Citations", "Found via"])
+        pheader = self.prior_table.horizontalHeader()
+        pheader.setSectionResizeMode(0, QHeaderView.Stretch)
+        pheader.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        pheader.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        pheader.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.prior_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.prior_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.prior_table.setAlternatingRowColors(True)
+        self.prior_table.itemDoubleClicked.connect(self._open_prior_work)
+        layout.addWidget(self.prior_table, 1)
+        row = QHBoxLayout()
+        self.btn_prior = QPushButton("Find closest prior works (network)")
+        self.btn_prior.clicked.connect(self._find_prior_works)
+        self.prior_info = QLabel("Run a scan first.")
+        self.prior_info.setObjectName("Muted")
+        self.prior_info.setWordWrap(True)
+        row.addWidget(self.btn_prior)
+        row.addWidget(self.prior_info, 1)
+        layout.addLayout(row)
+        self.tabs.addTab(page, "Prior work")
 
     # ============================================================ actions ==
     def _select_file(self, path: str) -> None:
         self.current_file = path
         self.drop_zone.set_file(path)
         self.status_lbl.setText(f"Selected: {Path(path).name}")
+
+    def open_document(self, path: str) -> None:
+        """Select + scan a document (used by 'Scan with Attribo' shell launch)."""
+        target = str(path or "")
+        if not target:
+            return
+        self._select_file(target)
+        self._start_scan()
+
+    def _apply_theme(self) -> None:
+        self._theme = str(self.settings.get("theme", "dark"))
+        self._mcolors = match_colors(self._theme)
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(stylesheet(self._theme))
+
+    def _toggle_thesis(self, checked: bool) -> None:
+        self.settings["batch_thesis"] = bool(checked)
+        try:
+            save_settings(self.settings)
+        except OSError:
+            pass
+
+    def _toggle_vault(self, checked: bool) -> None:
+        self.settings["vault_enabled"] = bool(checked)
+        try:
+            save_settings(self.settings)
+        except OSError:
+            pass
+        self.status_lbl.setText(
+            "Corpus Vault enabled - scans are compared with your own history."
+            if checked
+            else "Corpus Vault disabled (existing entries are kept until wiped)."
+        )
+        self._refresh_vault()
+
+    def _refresh_vault(self) -> None:
+        if not hasattr(self, "vault_table"):
+            return
+        try:
+            docs = vault_mod.list_docs()
+        except Exception:  # noqa: BLE001
+            docs = []
+        self.vault_table.setRowCount(len(docs))
+        for row, doc in enumerate(docs):
+            self.vault_table.setItem(row, 0, QTableWidgetItem(str(doc.get("name", ""))))
+            self.vault_table.setItem(row, 1, QTableWidgetItem(str(doc.get("ts", ""))))
+            self.vault_table.setItem(
+                row, 2, QTableWidgetItem(f"{int(doc.get('chars', 0) or 0):,}")
+            )
+            self.vault_table.setItem(row, 3, QTableWidgetItem(str(doc.get("id", ""))))
+
+    def _remove_vault_selected(self) -> None:
+        row = self.vault_table.currentRow()
+        if row < 0:
+            return
+        item = self.vault_table.item(row, 3)
+        if item is None:
+            return
+        try:
+            vault_mod.remove_doc(int(item.text()))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, APP_NAME, f"Could not remove the entry:\n{exc}")
+        self._refresh_vault()
+
+    def _wipe_vault(self) -> None:
+        answer = QMessageBox.question(
+            self, APP_NAME, "Remove every document from the Corpus Vault?"
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            count = vault_mod.clear()
+        except Exception:  # noqa: BLE001
+            count = 0
+        self._refresh_vault()
+        self.status_lbl.setText(f"Corpus Vault cleared ({count} document(s) removed).")
+
+    def _find_prior_works(self) -> None:
+        if not self.result or not self.result.full_text:
+            QMessageBox.information(self, APP_NAME, "Run a scan first.")
+            return
+        text = self.result.full_text
+        settings = dict(self.settings)
+
+        def job(progress=None, cancel=None):
+            return priorwork.find_prior_works(text, settings)
+
+        def done(works):
+            self._prior_works = list(works)
+            self.prior_table.setRowCount(len(self._prior_works))
+            for row, work in enumerate(self._prior_works):
+                title = QTableWidgetItem(str(work.get("title", "")))
+                title.setToolTip(str(work.get("url", "")))
+                self.prior_table.setItem(row, 0, title)
+                self.prior_table.setItem(
+                    row, 1, QTableWidgetItem(str(work.get("year", "") or ""))
+                )
+                self.prior_table.setItem(
+                    row, 2, QTableWidgetItem(str(work.get("citations", "") or ""))
+                )
+                self.prior_table.setItem(row, 3, QTableWidgetItem(str(work.get("source", ""))))
+            self.prior_info.setText(
+                f"{len(self._prior_works)} work(s) found - double-click a row to open it."
+                if self._prior_works
+                else "Nothing found (offline, or the abstract was too short)."
+            )
+
+        self._run_func(job, done, "Searching OpenAlex / Crossref for prior works...")
+
+    def _open_prior_work(self) -> None:
+        row = self.prior_table.currentRow()
+        if row < 0 or row >= len(self._prior_works):
+            return
+        url = str(self._prior_works[row].get("url", "") or "")
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
 
     def _choose_archive_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Choose archive folder")
@@ -516,6 +816,7 @@ class MainWindow(QMainWindow):
         self.settings["enable_ai"] = self.chk_ai.isChecked()
         self.settings["exclude_quotes"] = self.chk_quotes.isChecked()
         self.settings["enable_archive"] = self.chk_archive.isChecked()
+        self.settings["batch_thesis"] = self.chk_thesis.isChecked()
         self.settings["max_queries"] = self.spin_queries.value()
         try:
             save_settings(self.settings)
@@ -622,11 +923,23 @@ class MainWindow(QMainWindow):
             f"Batch done: {len(ok)} scanned, {len(errors)} failed. Reports in {self._batch_out}"
         )
         self._refresh_history()
+        thesis_note = ""
+        if self.settings.get("batch_thesis", False) and ok:
+            try:
+                summary = thesis.build_thesis_summary(ok, self._batch_out)
+                thesis_note = (
+                    f"\n\nThesis summary: {summary['overlaps']} cross-chapter "
+                    f"overlap(s) found.\n{summary['path']}"
+                )
+                QDesktopServices.openUrl(QUrl.fromLocalFile(summary["path"]))
+            except Exception as exc:  # noqa: BLE001
+                thesis_note = f"\n\nThesis summary could not be built: {exc}"
         QMessageBox.information(
             self,
             APP_NAME,
             f"Batch finished.\n\nScanned: {len(ok)}\nFailed: {len(errors)}\n\n"
-            f"Reports written to:\n{self._batch_out}\n\nOpen index.html for the overview.",
+            f"Reports written to:\n{self._batch_out}\n\nOpen index.html for the overview."
+            + thesis_note,
         )
         QDesktopServices.openUrl(QUrl.fromLocalFile(self._batch_out))
 
@@ -807,6 +1120,10 @@ class MainWindow(QMainWindow):
             source_items = "<li>No sources matched within this scan's coverage.</li>"
         ai_note = h(r.ai_details.get("note", "")) if r.ai_details else ""
         ai_version = h(r.ai_details.get("version", "")) if r.ai_details else ""
+        ai_agreement = h((r.ai_details or {}).get("agreement", "")) if r.ai_details else ""
+        ai_line = ai_note
+        if ai_agreement:
+            ai_line = (ai_line + " \u00b7 " if ai_line else "") + ai_agreement
         flagged = (r.ai_details or {}).get("flagged", [])
         flagged_items = "".join(f"<li>{h(s)}</li>" for s in flagged)
         flagged_block = (
@@ -837,7 +1154,7 @@ class MainWindow(QMainWindow):
               <h4 style="margin:12px 0 4px 0;">Coverage notes</h4>
               <ul>{warning_items}</ul>
               {flagged_block}
-              {"<p style='color:#8A94A6;'>AI analysis: " + ai_note + "</p>" if ai_note else ""}
+              {"<p style='color:#8A94A6;'>AI signals: " + ai_line + " &middot; use Explain AI signals for per-metric detail</p>" if ai_line else ""}
             </div>
             """
         )
@@ -850,7 +1167,7 @@ class MainWindow(QMainWindow):
             cells = [label, str(match.tokens), match.source_title[:90], match.text[:220]]
             for col, text in enumerate(cells):
                 self.matches_table.setItem(row, col, QTableWidgetItem(text))
-            color = QColor(MATCH_COLORS.get(match.match_type, "#8A94A6"))
+            color = QColor(self._mcolors.get(match.match_type, "#8A94A6"))
             type_item = self.matches_table.item(row, 0)
             if type_item is not None:
                 type_item.setForeground(QBrush(color))
@@ -867,26 +1184,36 @@ class MainWindow(QMainWindow):
         # fix & cite tab
         self.fix_table.setRowCount(len(r.matches))
         for row, match in enumerate(r.matches):
+            done_item = QTableWidgetItem()
+            done_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+            done_item.setCheckState(Qt.Unchecked)
+            done_item.setToolTip(
+                "Tick when this flag is resolved - checked flags are skipped in "
+                "the worklist export."
+            )
+            self.fix_table.setItem(row, 0, done_item)
             label = MATCH_LABELS.get(match.match_type, match.match_type)
             cells = [label, match.source_title[:70], match.text[:150], match.suggestion[:150]]
-            for col, text in enumerate(cells):
+            for offset, text in enumerate(cells):
+                col = offset + 1
                 item = QTableWidgetItem(text)
-                if col == 3:
+                if col == 4:
                     item.setToolTip(match.suggestion)
                 self.fix_table.setItem(row, col, item)
-            color = QColor(MATCH_COLORS.get(match.match_type, "#8A94A6"))
-            type_item = self.fix_table.item(row, 0)
+            color = QColor(self._mcolors.get(match.match_type, "#8A94A6"))
+            type_item = self.fix_table.item(row, 1)
             if type_item is not None:
                 type_item.setForeground(QBrush(color))
                 font = type_item.font()
                 font.setBold(True)
                 type_item.setFont(font)
-            for col in range(4):
+            for col in range(1, 5):
                 item = self.fix_table.item(row, col)
                 if item is not None:
                     bg = QColor(color)
-                    bg.setAlpha(36 if col == 0 else 12)
+                    bg.setAlpha(36 if col == 1 else 12)
                     item.setBackground(QBrush(bg))
+        self._update_fix_progress()
 
         # cite assist tab
         self._gaps = list(gaps)
@@ -909,6 +1236,10 @@ class MainWindow(QMainWindow):
 
         # certificate tab
         license_text = "Registered copy" if r.licensed else "Unregistered copy (trial watermark)"
+        try:
+            signature = signing.sign_result(r)
+        except Exception:  # noqa: BLE001
+            signature = "n/a"
         self.cert_info.setHtml(
             f"""
             <div style="color:#E8EDF4;">
@@ -918,11 +1249,13 @@ class MainWindow(QMainWindow):
                  Document: {h(r.file_name)}<br/>
                  SHA-256: {h(r.doc_hash)}<br/>
                  License status: {license_text}<br/>
-                 Stylometry: {ai_version or "n/a"}</p>
+                 Stylometry: {ai_version or "n/a"}<br/>
+                 Tamper-evident signature: <b>{h(signature)}</b></p>
               <p style="color:#8A94A6;">
-                The certificate PDF carries these scores, the document hash, a QR code
-                and the report ID. Both exports are standard PDF files you can print
-                or attach to a submission package.
+                The certificate PDF carries these scores, the document hash, a QR code,
+                the report ID and the signature above. "Verify report ID" re-checks
+                the signature against the stored scan row. Both exports are standard
+                PDF files you can print or attach to a submission package.
               </p>
             </div>
             """
@@ -934,6 +1267,20 @@ class MainWindow(QMainWindow):
         self.btn_highlight.setEnabled(bool(r.full_text))
         self.btn_word.setEnabled(Path(r.file_path).suffix.lower() == ".docx")
         self.btn_worklist.setEnabled(bool(r.matches))
+        self.btn_packet.setEnabled(True)
+        self.btn_redacted.setEnabled(True)
+        self.btn_explain_ai.setEnabled(bool(r.ai_details))
+        self.btn_fixed_copy.setEnabled(
+            Path(r.file_path).suffix.lower() == ".docx" and bool(r.matches)
+        )
+        if hasattr(self, "prior_info"):
+            self.prior_info.setText(
+                "Ready - click to search for prior works."
+                if r.full_text
+                else "Run a scan first."
+            )
+        self._results_history = [x for x in self._results_history if x is not r][-9:]
+        self._results_history.append(r)
 
     def _show_match_detail(self) -> None:
         row = self.matches_table.currentRow()
@@ -950,7 +1297,7 @@ class MainWindow(QMainWindow):
             if match.source_url
             else "<span style='color:#8A94A6;'>internal comparison</span>"
         )
-        color = MATCH_COLORS.get(match.match_type, "#8A94A6")
+        color = self._mcolors.get(match.match_type, "#8A94A6")
         label = MATCH_LABELS.get(match.match_type, match.match_type)
         self.match_detail.setHtml(
             f"""
@@ -1133,7 +1480,24 @@ class MainWindow(QMainWindow):
                     it = self.ref_table.item(row, col)
                     if it is not None:
                         it.setForeground(QColor(color))
-        self.ref_info.setText(f"Validated {len(results)}; {bad} need attention. Double-click a row to open.")
+        retracted = sum(1 for result in results if result.get("status") == "retracted")
+        if retracted:
+            self.ref_info.setText(
+                f"Validated {len(results)}; {bad} need attention - "
+                f"{retracted} RETRACTED reference(s)! Double-click a row to open."
+            )
+            try:
+                self.summary_info.append(
+                    f"<p style='color:#FF5B5B;'><b>{retracted} retracted "
+                    "reference(s)</b> found in your bibliography - see the "
+                    "References tab before submitting.</p>"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            self.ref_info.setText(
+                f"Validated {len(results)}; {bad} need attention. Double-click a row to open."
+            )
 
     def _open_reference(self) -> None:
         row = self.ref_table.currentRow()
@@ -1274,28 +1638,368 @@ class MainWindow(QMainWindow):
         )
         self.status_lbl.setText(f"Worklist saved: {path}")
 
+    def _export_worklist(self) -> None:
+        if not self.result or not self.result.matches:
+            QMessageBox.information(
+                self, APP_NAME, "Run a scan first - the worklist needs at least one flag."
+            )
+            return
+        resolved = self._checked_matches()
+        if resolved and len(resolved) >= len(self.result.matches):
+            QMessageBox.information(
+                self,
+                APP_NAME,
+                "Every flag is ticked as fixed - untick a row to include it in the "
+                "worklist export.",
+            )
+            return
+        default = str(Path.home() / f"Attribo_Worklist_{self.result.report_id}.docx")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Fix & Cite worklist", default, "Word document (*.docx)"
+        )
+        if not path:
+            return
+        try:
+            count = word_export.build_worklist_docx(
+                self.result, path, exclude_matches=resolved
+            )
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, APP_NAME, f"Could not write worklist:\n{exc}")
+            return
+        extra = f" ({len(resolved)} ticked flag(s) skipped)" if resolved else ""
+        QMessageBox.information(
+            self,
+            APP_NAME,
+            f"Fix & Cite worklist saved:\n{path}\n\n"
+            f"{count} flag(s) with read-and-replace rows{extra}.",
+        )
+        self.status_lbl.setText(f"Worklist saved: {path}")
+
+    def _export_fixed_copy(self) -> None:
+        if not self.result:
+            QMessageBox.information(self, APP_NAME, "Run a scan first.")
+            return
+        if Path(self.result.file_path).suffix.lower() != ".docx":
+            QMessageBox.information(
+                self,
+                APP_NAME,
+                "The compliant-rewrite copy works for .docx documents. For PDFs, "
+                "use the highlighted HTML copy instead.",
+            )
+            return
+        default = str(
+            Path(self.result.file_path).with_name(
+                Path(self.result.file_path).stem + "_fixed_copy.docx"
+            )
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save compliant-rewrite copy", default, "Word document (*.docx)"
+        )
+        if not path:
+            return
+        try:
+            applied, skipped = word_export.build_fixed_copy_docx(self.result, path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, APP_NAME, f"Could not write the fixed copy:\n{exc}")
+            return
+        QMessageBox.information(
+            self,
+            APP_NAME,
+            f"Compliant-rewrite copy saved:\n{path}\n\n"
+            f"{applied} passage(s) replaced, {skipped} skipped (could not be located "
+            "uniquely).\nYour original document was not modified. Replace the "
+            "AUTHOR, YEAR placeholders with the real citations.",
+        )
+        self.status_lbl.setText(f"Fixed copy saved: {path}")
+
+    def _export_packet(self) -> None:
+        if not self.result:
+            return
+        default = str(Path.home() / f"Attribo_SupervisorPacket_{self.result.report_id}.pdf")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save supervisor packet", default, "PDF (*.pdf)"
+        )
+        if not path:
+            return
+        try:
+            rows = db.recent_scans(20)
+        except Exception:  # noqa: BLE001
+            rows = []
+        try:
+            signature = packet.build_packet_pdf(self.result, rows, path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, APP_NAME, f"Could not write the packet:\n{exc}")
+            return
+        QMessageBox.information(
+            self,
+            APP_NAME,
+            f"Supervisor packet saved:\n{path}\n\nSignature: {signature}",
+        )
+        self.status_lbl.setText(f"Supervisor packet saved: {path}")
+
+    def _export_redacted(self) -> None:
+        if not self.result:
+            return
+        default = str(Path.home() / f"Attribo_Redacted_{self.result.report_id}.html")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save redacted report", default, "HTML (*.html)"
+        )
+        if not path:
+            return
+        try:
+            count = redacted.build_redacted_html(self.result, path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(
+                self, APP_NAME, f"Could not write the redacted report:\n{exc}"
+            )
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+        QMessageBox.information(
+            self,
+            APP_NAME,
+            f"Redacted report saved ({count} flag(s), no draft text):\n{path}",
+        )
+
+    def _explain_ai(self) -> None:
+        if not self.result:
+            return
+        text = ai_detect.explain_ai(getattr(self.result, "ai_details", {}) or {})
+        box = QMessageBox(self)
+        box.setWindowTitle(f"{APP_NAME} - AI signals")
+        box.setIcon(QMessageBox.Information)
+        box.setText("AI-likelihood: what raised the score")
+        box.setDetailedText(text)
+        box.setStandardButtons(QMessageBox.Ok)
+        box.exec()
+
+    def _export_diff(self) -> None:
+        if not self.result:
+            QMessageBox.information(self, APP_NAME, "Run a scan first.")
+            return
+        previous = None
+        for candidate in reversed(self._results_history):
+            if candidate is self.result:
+                continue
+            if candidate.file_name == self.result.file_name:
+                previous = candidate
+                break
+        if previous is None:
+            QMessageBox.information(
+                self,
+                APP_NAME,
+                "No earlier scan of this document in this session.\n\n"
+                "Scan the same document again after editing, then this button "
+                "compares the two drafts: fixed / persisting / new + score deltas.",
+            )
+            return
+        default = str(
+            Path(self.result.file_path).with_name(
+                Path(self.result.file_path).stem + "_diff.html"
+            )
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save revision diff report", default, "HTML report (*.html)"
+        )
+        if not path:
+            return
+        try:
+            diff = diff_report.build_diff_html(previous, self.result, path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, APP_NAME, f"Could not write the diff report:\n{exc}")
+            return
+        QMessageBox.information(
+            self,
+            APP_NAME,
+            f"Revision diff saved:\n{path}\n\n"
+            f"Fixed: {len(diff['fixed'])}  -  Persisting: {len(diff['persisting'])}  -  "
+            f"New: {len(diff['new'])}",
+        )
+        self.status_lbl.setText(f"Diff report saved: {path}")
+
+    # ================================================== citation audits ==
+    def _run_citation_graph(self) -> None:
+        if not self.result:
+            QMessageBox.information(self, APP_NAME, "Run a scan first.")
+            return
+        entries = list(getattr(self.result, "ref_entries", []) or [])
+        graph = citationgraph.build_citation_graph(self.result.full_text, entries)
+
+        def block(title: str, items: list, color: str) -> str:
+            if not items:
+                return f"<p style='color:#8A94A6;'>{title}: none found.</p>"
+            joined = "".join(
+                f"<li style='color:{color};margin:2px 0;'>{h(item)}</li>" for item in items
+            )
+            return (
+                f"<p style='color:#E8EDF4;'><b>{title} ({len(items)})</b></p>"
+                f"<ul style='margin:4px 0 12px 18px;'>{joined}</ul>"
+            )
+
+        parts = [
+            "<div style='color:#E8EDF4;'>",
+            "<h3 style='margin:2px 0;'>Citation cross-check</h3>",
+            f"<p style='color:#8A94A6;'>Reference entries parsed locally: "
+            f"<b>{graph['entries']}</b></p>",
+            block("Cited in text but not in the bibliography", graph["missing"], "#FF5B5B"),
+            block("In the bibliography but never cited", graph["uncited"], "#FF9F40"),
+            block("Possible duplicate entries", graph["duplicates"], "#C084FC"),
+        ]
+        if graph.get("numeric_note"):
+            parts.append(f"<p style='color:#8A94A6;'>{h(graph['numeric_note'])}</p>")
+        parts.append(
+            "<p style='color:#8A94A6;'><i>Heuristic matching on author names and "
+            "years - verify each item manually.</i></p></div>"
+        )
+        self.cite_audit.setHtml("".join(parts))
+
+    def _run_quote_audit(self) -> None:
+        if not self.result or not self.result.full_text:
+            QMessageBox.information(self, APP_NAME, "Run a scan first.")
+            return
+        issues = citationgraph.audit_quotes(self.result.full_text)
+        unattributed = [item for item in issues if not item["attributed"]]
+        blocks = []
+        for issue in issues[:25]:
+            if issue["attributed"]:
+                state, color = "attribution found nearby", "#34D399"
+            else:
+                state, color = "NO attribution found nearby", "#FF5B5B"
+            block_note = (
+                " &middot; long quote: use block-quote formatting with a citation"
+                if issue["needs_block"]
+                else ""
+            )
+            blocks.append(
+                f"<div style='margin:6px 0;padding:8px;background:#10161F;"
+                f"border-left:3px solid {color};border-radius:6px;'>"
+                f"<span style='color:{color};font-weight:600;'>{state}</span>"
+                f"<span style='color:#8A94A6;'> &middot; {issue['words']} words"
+                f"{block_note}</span>"
+                f"<div style='color:#E8EDF4;'>&ldquo;{h(issue['quote'])}&rdquo;</div>"
+                "</div>"
+            )
+        header = (
+            "<div style='color:#E8EDF4;'><h3 style='margin:2px 0;'>Quote audit</h3>"
+            f"<p style='color:#8A94A6;'>Quotations of 6+ words found: "
+            f"<b>{len(issues)}</b> &middot; without nearby attribution: "
+            f"<b>{len(unattributed)}</b></p>"
+        )
+        if not blocks:
+            blocks = ["<p style='color:#8A94A6;'>No quotations of 6+ words found.</p>"]
+        self.cite_audit.setHtml(header + "".join(blocks) + "</div>")
+
+    def _run_support_check(self) -> None:
+        if not self.result or not getattr(self.result, "ref_entries", None):
+            QMessageBox.information(
+                self, APP_NAME, "No reference entries were parsed for this scan."
+            )
+            return
+        entries = list(self.result.ref_entries)
+        text = self.result.full_text
+        settings = dict(self.settings)
+
+        def job(progress=None, cancel=None):
+            return citationgraph.citation_support(entries, text, settings)
+
+        def done(results):
+            colors = {
+                "supported": "#34D399",
+                "weak": "#FF5B5B",
+                "no-cite": "#FF9F40",
+                "unavailable": "#8A94A6",
+                "skipped": "#8A94A6",
+            }
+            blocks = []
+            for item in results:
+                verdict = str(item.get("verdict", ""))
+                color = colors.get(verdict, "#8A94A6")
+                blocks.append(
+                    f"<div style='margin:6px 0;'><span style='color:{color};"
+                    f"font-weight:600;'>{h(verdict.upper())}</span> "
+                    f"<span style='color:#8A94A6;'>{h(item.get('entry', ''))}</span>"
+                    f"<div style='color:#E8EDF4;font-size:12px;'>"
+                    f"{h(item.get('detail', ''))}</div></div>"
+                )
+            self.cite_audit.setHtml(
+                "<div style='color:#E8EDF4;'><h3 style='margin:2px 0;'>"
+                "Citation support check</h3>"
+                f"<p style='color:#8A94A6;'>{len(results)} reference(s) checked "
+                "against abstracts (local embeddings when the semantic model is "
+                "installed, term overlap otherwise). Advisory signal - read the "
+                "cited work before trusting a claim.</p>"
+                + "".join(blocks)
+                + "</div>"
+            )
+
+        self._run_func(job, done, "Checking citation support...")
+
     def _verify_report(self) -> None:
         if not self.result:
             return
         try:
-            rows = db.recent_scans(500)
-        except Exception:
-            rows = []
-        found = any(str(row[2]) == self.result.report_id for row in rows)
-        if found:
+            row = db.scan_row(self.result.report_id)
+        except Exception:  # noqa: BLE001
+            row = None
+        if not row:
+            QMessageBox.warning(
+                self,
+                APP_NAME,
+                f"Report ID {self.result.report_id} was not found in this PC's "
+                "scan history.",
+            )
+            return
+        ts, _name, report_id, similarity, integrity, _n_matches, ai, doc_hash = row
+        try:
+            row_signature = signing.sign_fields(
+                report_id, doc_hash, similarity, integrity, ai, ts
+            )
+            report_signature = signing.sign_result(self.result)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, APP_NAME, f"Signature check failed:\n{exc}")
+            return
+        if row_signature == report_signature:
             QMessageBox.information(
                 self,
                 APP_NAME,
-                f"Report ID {self.result.report_id} is present in this PC's scan history.",
+                f"Report ID {report_signature and self.result.report_id} found in this "
+                "PC's scan history.\n\n"
+                f"Signature: {report_signature}\n"
+                "Tamper-evident check passed: the stored scores, hash and timestamp "
+                "match this report.",
             )
         else:
             QMessageBox.warning(
                 self,
                 APP_NAME,
-                f"Report ID {self.result.report_id} was not found in this PC's scan history.",
+                f"Report ID {self.result.report_id} was found, but the signature "
+                "check FAILED.\n\n"
+                f"Stored:  {row_signature}\nReport:  {report_signature}\n\n"
+                "The stored scan row and this report disagree - do not rely on this "
+                "pair.",
             )
 
     # ======================================================== fix & cite ==
+    def _update_fix_progress(self, *_args) -> None:
+        if not hasattr(self, "fix_table"):
+            return
+        total = self.fix_table.rowCount()
+        checked = 0
+        for row in range(total):
+            item = self.fix_table.item(row, 0)
+            if item is not None and item.checkState() == Qt.Checked:
+                checked += 1
+        if hasattr(self, "fix_progress"):
+            self.fix_progress.setText(f"fixed {checked} of {total}")
+
+    def _checked_matches(self) -> list:
+        resolved = []
+        for row in range(self.fix_table.rowCount()):
+            item = self.fix_table.item(row, 0)
+            if item is not None and item.checkState() == Qt.Checked:
+                if row < len(self._result_matches):
+                    resolved.append(self._result_matches[row])
+        return resolved
+
     def _selected_fix_match(self):
         row = self.fix_table.currentRow()
         if row < 0 or row >= len(self._result_matches):
@@ -1341,6 +2045,11 @@ class MainWindow(QMainWindow):
             self.chk_quotes.setChecked(bool(self.settings.get("exclude_quotes", False)))
             self._refresh_archive_label()
             self._refresh_license_label()
+            self._apply_theme()
+            if hasattr(self, "chk_vault"):
+                self.chk_vault.setChecked(
+                    bool(self.settings.get("vault_enabled", False))
+                )
 
     def _refresh_license_label(self) -> None:
         info = verify_key(str(self.settings.get("license_key", "")))

@@ -54,57 +54,89 @@
 - Arabic-first UI localization (RTL) + Arabic tokenizer tuning
 - Full per-sentence heatmap view
 
-## v2.0 — Research integrity suite
+## v2.0 — Research integrity suite — SHIPPED (2026-10-18)
+
+Everything below ships in the same **2.0.0** build, as pragmatic implementations with honest
+simplifications noted inline. Detector evasion remains a non-goal (see bottom of file).
 
 ### Corpus & thesis intelligence
 
-- **Corpus Vault**: persistent local index (opt-in) — every scanned document accumulates; instant
-  self-plagiarism checks across your own history; management UI to view/remove indexed documents
-- **Thesis mode**: chapter split, per-chapter score rings, cross-chapter duplicate suppression,
-  one aggregate report
-- **Prior-work positioning**: closest existing works to your abstract (OpenAlex / Crossref + local
-  embeddings) — helps you position your contribution honestly
+- ✅ **Corpus Vault** — opt-in local index of documents you have scanned (stored in `attribo.db`);
+  every scan is then also compared against your own history (extra sources of kind `vault`).
+  Vault tab: enable, list, remove selected, wipe. Nothing is ever uploaded.
+- ✅ **Thesis mode** — tick it before a batch scan: per-chapter score table + aggregate means +
+  cross-chapter verbatim overlap detection (≥ 8 words) written to `thesis_summary.html`.
+  *Simplification:* chapters are files (one per chapter); a single `.docx` is not split by
+  headings yet.
+- ✅ **Prior-work positioning** — the abstract is extracted locally and its most distinctive
+  sentences are searched on OpenAlex / Crossref; closest works (title / year / citations) are
+  listed in the Prior work tab.
 
 ### Claim–citation verification
 
-- **Citation support check**: does the cited source actually support the sentence?
-  (sentence vs. abstract comparison via local embeddings)
-- **Two-way citation graph**: in-text citations ↔ bibliography — missing references, uncited
-  references, duplicate entries
-- **Quoted-material audit**: quotes without attribution, block-quote formatting needed, quote
-  wording mismatches
-- Retraction warnings surfaced on matches, not only in the References tab
+- ✅ **Citation support check** — citing sentence vs. the cited work's abstract (local embeddings
+  when the semantic model is installed, term-overlap otherwise). Verdicts: supported / weak /
+  no-cite / unavailable. Abstracts are fetched from OpenAlex by DOI (network; only the DOI
+  leaves the machine).
+- ✅ **Two-way citation graph** — offline parse of in-text citations ↔ bibliography: cited but
+  missing, uncited entries, duplicate entries. Heuristic author/year matching — verify manually.
+- ✅ **Quoted-material audit** — finds quotations ≥ 6 words, attribution proximity (±220 chars),
+  and block-quote formatting needs (40+ words). Fix & Cite marks quotes *verified
+  word-for-word* only when the flagged passage matches the captured source excerpt exactly.
+- ✅ **Retraction warnings on matches** — after reference validation, retracted entries surface
+  in the Summary tab as well as the References tab. *Simplification:* warnings attach to your
+  bibliography, not to a specific match row.
 
 ### Fix & Cite 2.0
 
-- **Natural rewrite suggestions**: rewrites that read like natural human prose — meaning,
-  terminology and citations preserved; verified against the captured source so quotes stay exact
-- **One-click compliant rewrite**: quote / cite / paraphrase version inserted into a `.docx` copy
-  (your original is never modified)
-- **Fix checklist**: tick off resolved flags; remaining issues feed the rescan diff
+- ✅ **Natural rewrite suggestions** — deterministic attribution frames (quote / cite /
+  paraphrase) that preserve meaning and terminology, with citation placeholders for you to fill.
+- ✅ **One-click compliant rewrite** — writes a *copy* of the scanned `.docx` with every flag
+  replaced by its compliant version; your original is never modified. *Limitation:* paragraph
+  text only (not text boxes / tables / headers); the replaced span keeps its first run's
+  formatting.
+- ✅ **Fix checklist** — "Done" column in Fix & Cite with a live "fixed N of M" counter; ticked
+  flags are skipped in the worklist export. *Note:* ticks are a workflow aid — they do not
+  change scan scoring.
 
 ### Reports & trust
 
-- **Revision diff report**: Draft I vs II — fixed / new / persisting findings + score deltas
-- **Supervisor review packet**: one-pager + evidence + revision history compiled into one PDF
-- **Offline tamper-evident certificates**: signed payload + QR; in-app verify dialog
-  (a hosted verification page stays optional)
-- **Redacted shareable report**: findings + sources without your draft text
+- ✅ **Revision diff report** — Draft I vs Draft II (same session): fixed / persisting / new
+  findings + score deltas (similarity, paraphrase, AI, integrity), as HTML from the History tab.
+- ✅ **Supervisor review packet** — one PDF: score summary, method & limits, findings table,
+  evidence extracts, revision history, signature.
+- ✅ **Offline tamper-evident certificates** — HMAC-SHA256 signature (`SIG-…`) over
+  report ID | document hash | scores | timestamp, embedded in the certificate PDF and QR
+  payload; "Verify report ID" recomputes it against the stored scan row and fails loudly on
+  mismatch. *Scope:* tamper-evidence against edits of the stored data — an app-local secret,
+  not third-party cryptographic attestation (hosted page stays optional, v2.x).
+- ✅ **Redacted shareable report** — HTML findings + sources without a single word of your draft.
 
 ### AI signals with explanations
 
-- Multi-signal ensemble (stylometry + classifier + burstiness): agreement shown;
-  disagreement displayed as uncertainty
-- Per-sentence reasoning: which metric fired and why
-- Human-edit delta: did your revisions reduce machine-like markers? (feeds the revision tracker)
+- ✅ **Multi-signal view with agreement** — stylometry sub-signals (burstiness, formulaic
+  phrases, discourse markers, opener repetition, TTR, trigram repetition) each scored and
+  explained; "N of 6 sub-signals raised" shown in the Summary and the explain dialog.
+- ✅ **Per-metric reasoning** — "Explain AI signals" lists the worst four signals with the
+  values that raised them, plus the flagged formulaic passages.
+- ✅ **Human-edit delta** — the revision diff reports the AI-likelihood change between drafts.
+  *Simplification:* the separate bundled ONNX classifier stays a v1.0 item; this build's
+  ensemble is the stylometry sub-signal set (+ optional semantic layer for paraphrase).
 
 ### Platform & automation
 
-- CLI mode: `attribo scan file.docx --json` for scripting and batch automation
-- Shell integration: right-click any file → "Scan with Attribo"
-- Portable mode (run from USB, data beside the exe) + backup/restore of history and settings
-- Model manager: optional downloads with checksums; import models offline from a friend's machine
-- Privacy dashboard (what is stored where, per-item wipe, export-all) + light theme
+- ✅ **CLI mode** — `python -m attribo.cli scan <file> [--json] [--out DIR] [--strictness LEVEL]
+  [--license KEY] [--no-web]`.
+- ✅ **Shell integration** — the installer writes per-user Explorer entries for `.docx` / `.pdf` /
+  `.txt`: right-click → "Scan with Attribo" (`Attribo.exe --scan "%1"`); removed on uninstall.
+- ✅ **Portable mode** — an empty `Attribo-portable.marker` beside `Attribo.exe` (or
+  `ATTRIBO_PORTABLE=1`) keeps settings, history, models and vault in `AttriboData\` next to the
+  app. Privacy tab: one-click zip backup / restore of settings + history.
+- ✅ **Model manager** (partial) — status, download and delete of the optional semantic model.
+  Checksum pinning and offline import from another machine remain on the v2.x list.
+- ✅ **Privacy dashboard** — new Privacy tab: data folder + mode, an honest "what leaves this
+  machine" list, one-click wipe of history / vault / evidence cache, backup & restore.
+- ✅ **Light theme** — Settings → Scanning → Appearance (dark / light), applied instantly.
 
 ## v2.x — Institution option (only if desired)
 

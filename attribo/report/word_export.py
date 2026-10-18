@@ -291,17 +291,23 @@ def _add_run(paragraph, text, *, bold=False, italic=False, size=None, color=None
     return run
 
 
-def build_worklist_docx(result, path) -> int:
+def build_worklist_docx(result, path, exclude_matches=None) -> int:
     """
     Writes a Fix & Cite worklist .docx:
       - one numbered section per flag (type, tokens, source, excerpt, fix)
       - a read-and-replace table: ORIGINAL (search text) -> REPLACEMENT (paste text)
       - natural attribution frames to adapt
 
-    Returns the number of flags written. Raises on unusable input.
-    The original document is never modified.
+    `exclude_matches` (optional): match objects ticked as resolved in the app;
+    they are skipped. Returns the number of flags written. Raises on unusable
+    input. The original document is never modified.
     """
-    matches = [m for m in result.matches if (getattr(m, "text", "") or "").strip()]
+    excluded_ids = {id(m) for m in (exclude_matches or [])}
+    matches = [
+        m
+        for m in result.matches
+        if (getattr(m, "text", "") or "").strip() and id(m) not in excluded_ids
+    ]
     if not matches:
         raise RuntimeError("This scan has no flags - nothing to export.")
 
@@ -370,6 +376,16 @@ def build_worklist_docx(result, path) -> int:
         _add_run(sugg, "Suggested fix: ", bold=True, size=10, color="#0a7a4f")
         _add_run(sugg, str(getattr(match, "suggestion", "") or fixcite.suggestion_for(mtype)), size=10)
 
+        if fixcite.quote_verified(match) and mtype in ("verbatim", "near"):
+            verified = doc.add_paragraph()
+            _add_run(verified, "Quote check: ", bold=True, size=9, color="#0a7a4f")
+            _add_run(
+                verified,
+                "verified word-for-word against the captured source excerpt.",
+                size=9,
+                color="#0a7a4f",
+            )
+
         frames = fixcite.attribution_frames(
             getattr(match, "text", ""),
             getattr(match, "source_title", ""),
@@ -411,3 +427,128 @@ def build_worklist_docx(result, path) -> int:
 
     doc.save(str(path))
     return count
+
+
+# ======================================================================
+# One-click compliant rewrite - a fixed .docx COPY of the document
+# ======================================================================
+MAX_REPLACEMENTS = 80
+
+
+def _split_runs_at(paragraph, offset: int) -> None:
+    p = paragraph._p
+    runs = list(p.findall(qn("w:r")))
+    cum = 0
+    for r in runs:
+        txt = _run_text(r)
+        nxt = cum + len(txt)
+        if cum < offset < nxt:
+            _split_run_element(r, offset - cum)
+            return
+        cum = nxt
+
+
+def _replace_range(paragraph, char_start: int, char_end: int, replacement: str) -> bool:
+    """Replace paragraph text [char_start, char_end) keeping surrounding runs."""
+    if char_start >= char_end:
+        return False
+    _split_runs_at(paragraph, char_start)
+    _split_runs_at(paragraph, char_end)
+    runs = list(paragraph._p.findall(qn("w:r")))
+    cum = 0
+    covering = []
+    for r in runs:
+        txt = _run_text(r)
+        nxt = cum + len(txt)
+        if nxt > char_start and cum < char_end:
+            covering.append(r)
+        cum = nxt
+    if not covering:
+        return False
+    first = covering[0]
+    ts = first.findall(qn("w:t"))
+    if not ts:
+        return False
+    ts[0].text = str(replacement)
+    ts[0].set(XML_SPACE, "preserve")
+    for extra in ts[1:]:
+        first.remove(extra)
+    for r in covering[1:]:
+        for t in r.findall(qn("w:t")):
+            t.text = ""
+    return True
+
+
+def _locate_match_span(paragraph_text: str, match):
+    """Best (char_start, char_end) for `match` inside paragraph text, or None."""
+    toks = [(m.group(0).lower(), m.start(), m.end()) for m in TOKEN_RE.finditer(paragraph_text)]
+    query = [m.group(0).lower() for m in TOKEN_RE.finditer(match.text or "")][:60]
+    if len(query) < MIN_BLOCK or len(toks) < MIN_BLOCK:
+        return None
+    words = [t[0] for t in toks]
+    matcher = SequenceMatcher(None, words, query, autojunk=False)
+    best = None
+    for block in matcher.get_matching_blocks():
+        if block.size >= MIN_BLOCK and (best is None or block.size > best[0]):
+            best = (block.size, block.a)
+    if best is None:
+        return None
+    size, start_tok = best
+    return toks[start_tok][1], toks[start_tok + size - 1][2]
+
+
+def build_fixed_copy_docx(result, path) -> tuple:
+    """
+    Writes a *copy* of the scanned .docx with each flag replaced by its
+    compliant version (quoted passage + citation placeholder, or a
+    cross-reference for internal repeats). The original is never modified.
+
+    Returns (applied, skipped). Raises on unusable input.
+
+    Limitations (documented): only paragraph text is processed (not text
+    boxes, headers or tables); the replaced span inherits the formatting of
+    its first run.
+    """
+    src = Path(result.file_path)
+    if src.suffix.lower() != ".docx":
+        raise ValueError("The compliant-rewrite copy requires a .docx source document.")
+
+    doc = Document(str(src))
+    paragraphs = list(doc.paragraphs)
+    applied = 0
+    skipped = 0
+
+    order = {"verbatim": 0, "near": 1, "semantic": 2, "paraphrase": 3, "duplicate": 4}
+    matches = [m for m in result.matches if (getattr(m, "text", "") or "").strip()]
+    matches.sort(key=lambda m: order.get(getattr(m, "match_type", ""), 9))
+
+    for match in matches:
+        if applied >= MAX_REPLACEMENTS:
+            skipped += 1
+            continue
+        replacement = fixcite.replacement_for(match)
+        if not replacement:
+            skipped += 1
+            continue
+        placed = False
+        for paragraph in paragraphs:
+            text = paragraph.text or ""
+            if not text.strip():
+                continue
+            span = _locate_match_span(text, match)
+            if span and _replace_range(paragraph, span[0], span[1], replacement):
+                placed = True
+                break
+        if placed:
+            applied += 1
+        else:
+            skipped += 1
+
+    if not applied:
+        raise RuntimeError(
+            "No flagged passages could be located in the .docx text "
+            "(the document may have changed since the scan)."
+        )
+
+    doc.save(str(path))
+    return applied, skipped

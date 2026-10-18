@@ -139,3 +139,93 @@ MATCH_LABELS = {
     "paraphrase": "Paraphrase",
     "duplicate": "Internal dup",
 }
+
+# Colour code tuned for the light theme (darker for contrast on white).
+MATCH_COLORS_LIGHT = {
+    "verbatim": "#C0392B",
+    "near": "#B26A00",
+    "semantic": "#1D4ED8",
+    "paraphrase": "#946A00",
+    "duplicate": "#7C3AED",
+}
+
+
+def match_colors(theme: str = "dark") -> dict:
+    """Match-type colours tuned for the active theme."""
+    return MATCH_COLORS_LIGHT if str(theme).lower() == "light" else MATCH_COLORS
+
+
+# Light theme: same structure as the dark sheet, re-declared on top so the
+# cascade overrides it. Viewer panes (QTextBrowser) intentionally stay dark -
+# embedded report HTML uses dark-palette inline colours.
+LIGHT_QSS = QSS + f"""
+/* ===== light theme overrides ===== */
+QMainWindow, QDialog {{ background-color: #F3F5FA; }}
+QWidget {{ color: #1A2233; }}
+QLabel#BrandText {{ color: #1A2233; }}
+QLabel#BrandText2 {{ color: {ACCENT}; }}
+QLabel#Muted {{ color: #5B6577; }}
+QFrame#Header {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #FFFFFF, stop:0.5 #EEF2FB, stop:1 #FFFFFF);
+    border-bottom: 1px solid #D8DEEA;
+}}
+QFrame#Card {{ background-color: #FFFFFF; border: 1px solid #DCE2EE; }}
+
+QPushButton {{
+    background-color: #FFFFFF; color: #1A2233;
+    border: 1px solid #D3DAE8; border-radius: 9px;
+    padding: 8px 14px;
+}}
+QPushButton:hover {{ background-color: #EEF2FB; border-color: #B9C4DA; }}
+QPushButton:pressed {{ background-color: #E3E9F6; }}
+QPushButton:disabled {{ color: #9AA3B5; background-color: #F0F2F8; border-color: #E1E5EF; }}
+QPushButton#Primary {{ color: white; }}
+QPushButton#Primary:disabled {{ background: #D8DEEA; color: #9AA3B5; }}
+
+QLineEdit, QSpinBox, QComboBox {{
+    background-color: #FFFFFF; border: 1px solid #D3DAE8;
+    border-radius: 8px; padding: 7px 10px;
+}}
+QCheckBox {{ color: #1A2233; }}
+QCheckBox::indicator {{ border: 1px solid #B9C4DA; background: #FFFFFF; }}
+
+QProgressBar {{ background-color: #E8ECF5; color: #5B6577; }}
+
+QTabWidget::pane {{
+    border: 1px solid #DCE2EE; border-radius: 12px;
+    background-color: #FFFFFF;
+}}
+QTabBar::tab {{ color: #5B6577; }}
+QTabBar::tab:selected {{ background-color: #E8EEFC; color: #1A2233; }}
+QTabBar::tab:hover {{ color: #1A2233; }}
+
+QTableWidget {{
+    background-color: #FFFFFF; alternate-background-color: #F6F8FD;
+    gridline-color: #E4E8F1; border: 1px solid #DCE2EE;
+}}
+QHeaderView::section {{ background-color: #EEF1F8; color: #5B6577; }}
+QTableWidget::item:selected {{ background-color: #D8E2FA; color: #1A2233; }}
+
+QScrollBar::handle:vertical {{ background: #C4CCDD; }}
+QScrollBar::handle:vertical:hover {{ background: #A9B4CC; }}
+QScrollBar::handle:horizontal {{ background: #C4CCDD; }}
+
+QStatusBar {{ background-color: #EEF1F8; color: #5B6577; border-top: 1px solid #D8DEEA; }}
+QToolTip {{ background-color: #FFFFFF; color: #1A2233; border: 1px solid #D8DEEA; }}
+QMessageBox {{ background-color: #FFFFFF; }}
+QMenu {{ background-color: #FFFFFF; border: 1px solid #D8DEEA; }}
+QMenu::item:selected {{ background-color: #E8EEFC; }}
+
+QPushButton#UpdateBanner {{
+    background-color: #E3ECFF; color: #2451D8;
+    border: 1px solid #B9CDFB; border-radius: 10px;
+    padding: 5px 12px; font-weight: 600;
+}}
+QPushButton#UpdateBanner:hover {{ background-color: #D6E3FF; border-color: #9DBBFA; }}
+"""
+
+
+def stylesheet(theme: str = "dark") -> str:
+    """The full application stylesheet for the requested theme."""
+    return LIGHT_QSS if str(theme).lower() == "light" else QSS

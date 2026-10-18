@@ -339,6 +339,129 @@ def main() -> int:
     assert worklist_path.stat().st_size > 3000, "worklist docx too small"
     print(f"[ok] Fix & Cite worklist ({exported} flags)")
 
+    # -- v2.0: tamper-evident signing ----------------------------------------
+    from attribo.core import signing
+
+    signature = signing.sign_result(archive_result)
+    assert signature.startswith("SIG-"), "signature prefix missing"
+    assert signing.verify(
+        archive_result.report_id,
+        archive_result.doc_hash,
+        archive_result.similarity,
+        archive_result.integrity,
+        archive_result.ai_likelihood,
+        archive_result.timestamp,
+        signature,
+    ), "signature roundtrip failed"
+    assert not signing.verify(
+        archive_result.report_id,
+        archive_result.doc_hash,
+        0.0,
+        0.0,
+        0.0,
+        archive_result.timestamp,
+        signature,
+    ), "tampered payload verified"
+    print("[ok] tamper-evident signing (HMAC)")
+
+    # -- v2.0: corpus vault (offline) -----------------------------------------
+    from attribo.core import vault
+
+    vault.clear()
+    vault_settings = dict(settings)
+    vault_settings.update({"vault_enabled": True, "enable_archive": False})
+    vault_first = run_scan(str(doc), vault_settings)
+    assert vault.list_docs(), "vault list empty after scan"
+    vault_second = run_scan(str(docx_path), vault_settings)
+    assert any(s.kind == "vault" for s in vault_second.sources), "vault source missing"
+    assert any(m.match_type in ("verbatim", "near") for m in vault_second.matches), (
+        "vault self-plagiarism match missing"
+    )
+    assert vault.clear() >= 1, "vault clear failed"
+    print("[ok] corpus vault (index + self-plagiarism)")
+
+    # -- v2.0: citation graph + quote audit (offline) --------------------------
+    from attribo.core import citationgraph
+
+    graph = citationgraph.build_citation_graph(
+        "Concrete creep matters (Smith, 2019). The theory (Jones, 2021) disagrees.",
+        [
+            "[1] Smith, J. (2019). Structural analysis of tall buildings.",
+            "[2] Smith, J. (2019). Structural analysis of tall buildings.",
+            "[3] Lee, K. (2018). Uncited work about soil mechanics.",
+        ],
+    )
+    assert graph["entries"] == 3, "citation graph entry count wrong"
+    assert any("lee" in item.lower() for item in graph["uncited"]), "uncited ref not found"
+    assert graph["duplicates"], "duplicate reference not found"
+    quotes = citationgraph.audit_quotes(
+        'He wrote: "this specific quoted passage has no citation anywhere near it at all".'
+    )
+    assert quotes and quotes[0]["attributed"], "attribution detection failed"
+    print("[ok] citation graph + quote audit")
+
+    # -- v2.0: revision diff (offline) -----------------------------------------
+    from attribo.core import diffcheck
+
+    diff = diffcheck.compare_results(archive_result, vault_second)
+    assert set(("fixed", "persisting", "new", "deltas")) <= set(diff)
+    print("[ok] revision diff logic")
+
+    # -- v2.0: thesis cross-chapter overlaps ------------------------------------
+    from attribo.core import thesis
+
+    shared = (
+        "The methodology section repeats this exact shared passage about "
+        "survey sampling and validation procedures across chapters. "
+    )
+    thesis_files = []
+    for index in range(2):
+        thesis_doc = tmp / f"thesis_ch{index}.txt"
+        thesis_doc.write_text(shared * 2 + f"chapter{index} " * 30, encoding="utf-8")
+        thesis_files.append(str(thesis_doc))
+    thesis_out = tmp / "thesis_out"
+    thesis_results = run_batch(thesis_files, batch_settings, str(thesis_out))
+    summary = thesis.build_thesis_summary(
+        [r for r in thesis_results if not isinstance(r, tuple)], str(thesis_out)
+    )
+    assert summary["overlaps"] >= 1, "cross-chapter overlap not detected"
+    assert Path(summary["path"]).exists(), "thesis summary missing"
+    print(f"[ok] thesis mode ({summary['overlaps']} cross-chapter overlaps)")
+
+    # -- v2.0: reports (redacted, diff HTML, packet, fixed copy) ----------------
+    from attribo.report import diff_report, packet, redacted
+
+    redacted_file = tmp / "redacted.html"
+    redacted_count = redacted.build_redacted_html(archive_result, str(redacted_file))
+    redacted_text = redacted_file.read_text(encoding="utf-8")
+    assert redacted_count >= 1 and "passage redacted" in redacted_text
+    assert sample.text[:40] not in redacted_text, "redacted report leaked draft text"
+    diff_file = tmp / "diff.html"
+    diff_report.build_diff_html(archive_result, vault_second, str(diff_file))
+    assert "Revision diff" in diff_file.read_text(encoding="utf-8")
+    packet_pdf = tmp / "packet.pdf"
+    packet_signature = packet.build_packet_pdf(
+        archive_result, db.recent_scans(5), str(packet_pdf)
+    )
+    assert packet_signature.startswith("SIG-") and packet_pdf.stat().st_size > 3000
+    from attribo.report.word_export import build_fixed_copy_docx
+
+    fixed_path = tmp / "fixed_copy.docx"
+    applied, _skipped = build_fixed_copy_docx(docx_result, str(fixed_path))
+    assert applied >= 1 and fixed_path.stat().st_size > 3000, "fixed copy missing"
+    print(f"[ok] v2.0 reports (redacted/diff/packet/fixed copy: {applied} replaced)")
+
+    # -- v2.0: light theme + CLI entry ------------------------------------------
+    from attribo.theme import stylesheet
+
+    assert "light theme overrides" in stylesheet("light")
+    from attribo.cli import _summary as cli_summary
+
+    cli_data = cli_summary(archive_result)
+    assert cli_data["report_id"] == archive_result.report_id
+    assert cli_data["scores"]["similarity"] == archive_result.similarity
+    print("[ok] light theme + CLI summary")
+
     # -- UI (offscreen) --------------------------------------------------
     from PySide6.QtWidgets import QApplication
 

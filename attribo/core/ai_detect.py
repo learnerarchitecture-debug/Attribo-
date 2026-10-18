@@ -85,6 +85,10 @@ def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
     return max(low, min(high, value))
 
 
+def _signal(label: str, score: float, detail: str) -> dict:
+    return {"label": label, "score": round(_clamp(score), 1), "detail": detail}
+
+
 def analyze_ai(text: str) -> dict:
     sentences = [s for s in re.split(r"(?<=[.!?])\s+", text or "") if s.strip()]
     lengths = [len(TOKEN_RE.findall(s)) for s in sentences]
@@ -104,6 +108,9 @@ def analyze_ai(text: str) -> dict:
         "score": None,
         "note": "",
         "flagged": [],
+        "signals": [],
+        "signals_raised": 0,
+        "agreement": "",
     }
 
     if len(lengths) < 10 or len(tokens) < 120:
@@ -156,6 +163,42 @@ def analyze_ai(text: str) -> dict:
     details["trigram_repetition"] = round(tri_ratio, 3)
     rep_score = _clamp(100.0 * (tri_ratio - 0.02) / 0.08)
 
+    details["signals"] = [
+        _signal(
+            "Sentence-length variety (burstiness)",
+            burst_score,
+            f"std/mean = {burst:.2f}; flatter sentence lengths raise the score.",
+        ),
+        _signal(
+            "Formulaic-phrase density",
+            formulaic_score,
+            f"{hits} AI-typical phrase(s) found, {per_1k:.1f} per 1,000 words.",
+        ),
+        _signal(
+            "Discourse-marker density",
+            transition_score,
+            f"{transition_hits} connector(s), {transitions_per_1k:.1f} per 1,000 words.",
+        ),
+        _signal(
+            "Sentence-opener repetition",
+            opener_score,
+            f"{opener_uniqueness:.0%} of sentence openers are unique.",
+        ),
+        _signal(
+            "Lexical diversity (TTR)",
+            ttr_score,
+            f"type/token ratio = {ttr:.2f}; a mid-range ~0.42 is most human-like.",
+        ),
+        _signal(
+            "Trigram repetition",
+            rep_score,
+            f"{tri_ratio:.1%} of 3-word runs repeat somewhere in the text.",
+        ),
+    ]
+    raised = sum(1 for signal in details["signals"] if signal["score"] >= 60)
+    details["signals_raised"] = raised
+    details["agreement"] = f"{raised} of {len(details['signals'])} sub-signals raised"
+
     score = (
         0.35 * burst_score
         + 0.18 * formulaic_score
@@ -166,3 +209,38 @@ def analyze_ai(text: str) -> dict:
     )
     details["score"] = round(_clamp(score), 1)
     return details
+
+
+def explain_ai(details: dict) -> str:
+    """Human-readable explanation of the AI-likelihood signal (per-metric)."""
+    if not details:
+        return "No AI analysis was run for this scan."
+    if details.get("score") is None:
+        return str(details.get("note") or "Text too short for a reliable signal.")
+
+    signals = details.get("signals") or []
+    lines = [
+        f"Stylometry signal {details.get('version', VERSION)}: "
+        f"{details['score']}% likelihood - {details.get('agreement', '')}.",
+        "",
+        "What raised the score (worst first):",
+    ]
+    for signal in sorted(signals, key=lambda s: -float(s.get("score") or 0))[:4]:
+        lines.append(
+            f"- {signal.get('label', '')}: {float(signal.get('score') or 0):.0f}/100 - "
+            f"{signal.get('detail', '')}"
+        )
+    lines.extend(
+        [
+            "",
+            "Reminder: this is a writing-style signal, not proof of AI use. Uniform,",
+            "heavily formulaic prose also appears in human writing - review the",
+            "passages in context (see docs/ACCURACY_AND_LIMITS.md).",
+        ]
+    )
+    flagged = details.get("flagged") or []
+    if flagged:
+        lines.append("")
+        lines.append("Passages with the most formulaic phrasing:")
+        lines.extend(f"- {item}" for item in flagged)
+    return "\n".join(lines)

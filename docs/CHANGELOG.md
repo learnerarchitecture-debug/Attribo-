@@ -28,6 +28,47 @@
   offline. Documents are never uploaded.
 - Author information: **Ayush Gupta** (package metadata, installer, LICENSE, docs).
 
+### Added — full v2.0 suite (same 2.0.0 build)
+
+- **Corpus Vault** (Vault tab): opt-in local index of documents you have scanned — every scan is
+  then also compared against your own history (self-plagiarism). List / remove / wipe; nothing
+  is ever uploaded.
+- **Thesis mode** for batch scans (checkbox next to "Batch scan folder..."): per-chapter score
+  table + cross-chapter verbatim overlap detection written to `thesis_summary.html`.
+- **Prior-work positioning** (Prior work tab): local abstract extraction + closest published
+  works via OpenAlex / Crossref.
+- **Citation integrity suite** (Cite Assist tab): offline **citation cross-check**
+  (cited-but-missing / uncited / duplicate references), offline **quoted-material audit**
+  (attribution proximity, block-quote formatting needs), and a network **citation support
+  check** (citing sentence vs. the cited work's abstract — embeddings or term overlap).
+- **Retraction warnings** now surface in the Summary tab after reference validation.
+- **Verified-quote markers**: Fix & Cite flags suggestions as "quote check: verified
+  word-for-word" only when the passage matches the captured source excerpt exactly.
+- **One-click compliant rewrite**: exports a `.docx` *copy* with every flag replaced by its
+  compliant version (quote + citation placeholder); the original is never modified.
+- **Fix checklist**: "Done" column in Fix & Cite with a live "fixed N of M" counter; ticked
+  flags are skipped in the worklist export.
+- **Revision diff report (HTML)**: Draft I vs Draft II — fixed / persisting / new findings plus
+  similarity, paraphrase, AI and integrity deltas (History tab).
+- **Supervisor review packet (PDF)**: score summary, method & limits, findings table, evidence
+  extracts, revision history and the report signature in one file.
+- **Tamper-evident certificates**: HMAC-SHA256 signature (`SIG-…`) over report ID, document
+  hash, scores and timestamp — embedded in the certificate PDF and QR payload; "Verify report
+  ID" now re-checks the signature against the stored scan row.
+- **Redacted shareable report (HTML)**: findings + sources without a single word of your draft.
+- **Explained AI signals**: per-metric sub-signal breakdown, "N of 6 sub-signals raised"
+  agreement line and a one-click "Explain AI signals" dialog.
+- **CLI**: `python -m attribo.cli scan <file> [--json] [--out DIR] [--strictness LEVEL]
+  [--license KEY] [--no-web]`.
+- **Explorer integration**: right-click a `.docx` / `.pdf` / `.txt` → "Scan with Attribo"
+  (installer-managed per-user keys, removed on uninstall; the app also accepts a bare path).
+- **Portable mode**: an empty `Attribo-portable.marker` beside `Attribo.exe` (or
+  `ATTRIBO_PORTABLE=1`) keeps all data in `AttriboData\` next to the app.
+- **Privacy tab** in Settings: data location + mode, an honest "what leaves this machine" list,
+  zip backup / restore, and one-click wipe of scan history, Corpus Vault and evidence cache.
+- **Light theme** (Settings → Scanning → Appearance): full light QSS; report viewers stay dark
+  for print-style consistency.
+
 ### Changed
 
 - Suggestions are now structured, attribution-first texts (core/fixcite.py); strictness is

@@ -38,6 +38,14 @@ def init_db() -> None:
             n_sources INTEGER,
             licensed INTEGER
         );
+        CREATE TABLE IF NOT EXISTS vault (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT,
+            doc_name TEXT,
+            doc_hash TEXT,
+            char_count INTEGER,
+            text TEXT
+        );
         """
     )
     con.commit()
@@ -81,3 +89,30 @@ def recent_scans(limit: int = 50):
     ).fetchall()
     con.close()
     return rows
+
+
+def scan_row(report_id: str):
+    """One stored scan by report ID - used to verify certificate signatures.
+
+    Returns (ts, doc_name, report_id, similarity, integrity, n_matches, ai,
+    doc_hash) or None.
+    """
+    con = _conn()
+    row = con.execute(
+        """SELECT ts, doc_name, report_id, similarity, integrity, n_matches, ai,
+                  doc_hash
+           FROM scans WHERE report_id = ? ORDER BY id DESC LIMIT 1""",
+        (str(report_id),),
+    ).fetchone()
+    con.close()
+    return row
+
+
+def clear_history() -> int:
+    """Delete the whole scan history. Returns the number of rows removed."""
+    con = _conn()
+    count = con.execute("SELECT COUNT(*) FROM scans").fetchone()[0]
+    con.execute("DELETE FROM scans")
+    con.commit()
+    con.close()
+    return int(count or 0)

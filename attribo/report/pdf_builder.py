@@ -247,12 +247,27 @@ def build_certificate(result, path, licensed: bool = False) -> None:
     y -= 5 * mm
     status = "Registered copy" if licensed else "Unregistered copy (trial)"
     canvas.drawString(20 * mm, y, f"License status: {status}")
+    y -= 5 * mm
+    try:
+        from ..core.signing import sign_result
+
+        signature = sign_result(result)
+    except Exception:  # noqa: BLE001
+        signature = "n/a"
+    canvas.setFont("Courier", 8)
+    canvas.drawString(20 * mm, y, f"Tamper-evident signature: {signature}")
+    canvas.setFont("Helvetica", 8.5)
+    y -= 5 * mm
+    canvas.setFillColor(MUTED)
+    canvas.drawString(
+        20 * mm, y, "Verify in-app: Certificate tab -> Verify report ID (re-checks the signature)."
+    )
 
     # QR
     qr = qrcode.QRCode(border=1, box_size=4)
     qr.add_data(
         f"ATTRIBO|{result.report_id}|SHA={result.doc_hash[:16]}"
-        f"|SIM={result.similarity}|INT={result.integrity}"
+        f"|SIM={result.similarity}|INT={result.integrity}|SIG={signature}"
     )
     qr.make(fit=True)
     image = qr.make_image(fill_color="black", back_color="white")

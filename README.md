@@ -23,8 +23,14 @@ Built for personal and small-circle use (you + your friends), designed to compet
 | Word review copy | A `.docx` copy of your document with every flag inserted as an inline Word comment |
 | Batch & watch folder | Scan a whole folder; or watch a folder and auto-scan new documents with tray notifications |
 | Internal duplication | Flags passages you repeat inside your own document (reported separately from similarity) |
-| Certificate PDF | Hash-stamped, timestamped, QR-coded certificate with a 0–100 score table |
+| Certificate PDF | Hash-stamped, timestamped, QR-coded certificate with a 0–100 score table and an HMAC **tamper-evident signature** (re-checkable in-app) |
 | Full Report PDF | Source-by-source breakdown with matched passages |
+| Corpus Vault | Opt-in local index of your own scanned documents — every scan also self-checks against your history |
+| Thesis & prior work | Per-chapter batch report with cross-chapter overlap detection; closest published works to your abstract |
+| Revision & review | Draft I vs II diff report (fixed / persisting / new + score deltas); supervisor review packet (PDF); redacted shareable report |
+| Integrity audits | Citation cross-check, quoted-material audit, citation support check (network; citing sentence vs. cited abstract) |
+| Compliant rewrite | One-click `.docx` copy with every flagged passage replaced by its cited/quoted version — original untouched |
+| Platform extras | Portable mode (USB), CLI (`python -m attribo.cli`), Explorer right-click "Scan with Attribo", light theme |
 
 ## What it does NOT claim
 
@@ -72,12 +78,13 @@ Attribo-Attribo/
 ├─ requirements.txt
 ├─ version.json              # update manifest read by the in-app updater
 ├─ attribo/   # application package
-│  ├─ main.py                # app bootstrap
-│  ├─ theme.py               # dark theme (QSS)
-│  ├─ core/                  # parser, normalizer, segmenter, matching, scoring, AI heuristics, semantic (optional), strictness profiles, Fix & Cite text, GitHub updater, pipeline
+│  ├─ main.py                # app bootstrap (--scan shell integration, theme)
+│  ├─ cli.py                 # headless scans: python -m attribo.cli scan file.docx --json
+│  ├─ theme.py               # dark + light themes (QSS)
+│  ├─ core/                  # parser, matching, scoring, AI heuristics, semantic (optional), strictness, vault, citation graph, diff check, thesis mode, signing, Fix & Cite text, updater, pipeline
 │  ├─ engines/               # web search + academic connectors + cache + local archive
-│  ├─ report/                # PDF report + certificate + highlight export + Word review copy + Fix & Cite worklist
-│  ├─ storage/               # settings + SQLite history
+│  ├─ report/                # PDF report/certificate, highlight + Word exports, worklist, fixed-copy, packet, redacted & diff reports
+│  ├─ storage/               # settings (portable-aware) + SQLite history/vault
 │  ├─ ui/                    # main window, drag&drop zone, gauges, worker thread
 │  └─ licensing/             # offline friend-license keys
 ├─ tools/license_generator.py # keygen GUI + CLI (for you, the owner)
